@@ -2,5 +2,7 @@
   "name": "WhatsApp Evolution API Tester & Dashboard",
   "description": "Interactive testing studio for WhatsApp Hub Evolution API with real-time instance status dashboard, templated messaging, media delivery, and phone verification.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

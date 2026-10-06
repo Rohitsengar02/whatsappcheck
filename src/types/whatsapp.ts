@@ -8,12 +8,12 @@ export interface WhatsAppConfig {
 }
 
 export const DEFAULT_CONFIG: WhatsAppConfig = {
-  baseUrl: 'https://whatsappapi-1n7u.onrender.com',
-  instance: 'user_yrztomld6vqiqgjt',
-  apiKey: '429683C4C977415CAAFCCE10F7D57E11',
-  connectedNumber: '+919761304821',
-  mediaBucket: 'rudram-media',
-  useProxy: true,
+  baseUrl: '',
+  instance: '',
+  apiKey: '',
+  connectedNumber: '',
+  mediaBucket: '',
+  useProxy: false,
 };
 
 export type ConnectionStateStatus = 'open' | 'connecting' | 'close' | 'refused' | 'unknown' | 'error';

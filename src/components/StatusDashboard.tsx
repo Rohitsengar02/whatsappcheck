@@ -52,7 +52,19 @@ export const StatusDashboard: React.FC<StatusDashboardProps> = ({
     setTimeout(() => setCopiedKey(null), 1800);
   };
 
+  const isConfigured = Boolean(config.baseUrl && config.instance && config.apiKey);
+
   const getStatusBadge = () => {
+    if (!isConfigured) {
+      return {
+        bg: 'bg-zinc-800 text-zinc-400 border-zinc-700',
+        dot: 'bg-zinc-500',
+        text: 'NOT CONNECTED',
+        icon: <WifiOff className="w-4 h-4 text-zinc-400" />,
+        color: 'zinc',
+      };
+    }
+
     if (!connectionState) {
       return {
         bg: 'bg-zinc-800/80 text-zinc-300 border-zinc-700',
@@ -201,6 +213,26 @@ export const StatusDashboard: React.FC<StatusDashboardProps> = ({
         </div>
       </div>
 
+      {/* Connect Callout if not configured */}
+      {!isConfigured && (
+        <div className="mt-4 p-4 bg-gradient-to-r from-emerald-950/40 to-teal-950/30 border border-emerald-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+          <div>
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" /> Connect Your WhatsApp Instance
+            </h4>
+            <p className="text-xs text-zinc-300 mt-0.5">
+              Enter your Server URL, Instance Name, and API Key to connect and begin testing messages and templates.
+            </p>
+          </div>
+          <button
+            onClick={onOpenSettings}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow shrink-0 active:scale-95"
+          >
+            Enter Credentials
+          </button>
+        </div>
+      )}
+
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-5">
         {/* Card 1: Active Instance */}
@@ -210,20 +242,22 @@ export const StatusDashboard: React.FC<StatusDashboardProps> = ({
               <Server className="w-3.5 h-3.5 text-emerald-400" />
               Instance Name
             </span>
-            <button
-              onClick={() => copyToClipboard(config.instance, 'inst')}
-              className="text-zinc-500 hover:text-zinc-200 transition"
-              title="Copy instance name"
-            >
-              {copiedKey === 'inst' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
+            {config.instance && (
+              <button
+                onClick={() => copyToClipboard(config.instance, 'inst')}
+                className="text-zinc-500 hover:text-zinc-200 transition"
+                title="Copy instance name"
+              >
+                {copiedKey === 'inst' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            )}
           </div>
-          <div className="font-mono text-sm font-semibold text-white truncate" title={config.instance}>
-            {config.instance}
+          <div className="font-mono text-sm font-semibold text-white truncate" title={config.instance || 'Not configured'}>
+            {config.instance || <span className="text-zinc-500 italic font-sans text-xs">Not configured</span>}
           </div>
           <div className="text-[11px] text-zinc-500 mt-1 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            Render Evolution Service
+            <span className={`w-1.5 h-1.5 rounded-full ${config.instance ? 'bg-emerald-500' : 'bg-zinc-600'}`}></span>
+            {config.baseUrl ? 'Custom Evolution API' : 'No Server Connected'}
           </div>
         </div>
 
@@ -234,27 +268,31 @@ export const StatusDashboard: React.FC<StatusDashboardProps> = ({
               <Smartphone className="w-3.5 h-3.5 text-teal-400" />
               Connected Number
             </span>
-            <button
-              onClick={() => copyToClipboard(config.connectedNumber, 'phone')}
-              className="text-zinc-500 hover:text-zinc-200 transition"
-              title="Copy phone"
-            >
-              {copiedKey === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
+            {config.connectedNumber && (
+              <button
+                onClick={() => copyToClipboard(config.connectedNumber, 'phone')}
+                className="text-zinc-500 hover:text-zinc-200 transition"
+                title="Copy phone"
+              >
+                {copiedKey === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            )}
           </div>
           <div className="font-mono text-sm font-bold text-emerald-300">
-            {config.connectedNumber}
+            {config.connectedNumber || <span className="text-zinc-500 italic font-sans text-xs">Optional / Not set</span>}
           </div>
           <div className="text-[11px] text-zinc-400 mt-1 flex items-center justify-between">
-            <span className="text-zinc-400">Business WhatsApp</span>
-            <a
-              href={`https://wa.me/${config.connectedNumber.replace(/\D/g, '')}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-emerald-400 hover:underline flex items-center gap-0.5"
-            >
-              Chat <ExternalLink className="w-2.5 h-2.5" />
-            </a>
+            <span className="text-zinc-500">Business WhatsApp</span>
+            {config.connectedNumber && (
+              <a
+                href={`https://wa.me/${config.connectedNumber.replace(/\D/g, '')}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-emerald-400 hover:underline flex items-center gap-0.5"
+              >
+                Chat <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            )}
           </div>
         </div>
 
@@ -289,27 +327,27 @@ export const StatusDashboard: React.FC<StatusDashboardProps> = ({
           </div>
           <div className="text-[11px] text-zinc-500 mt-1 flex items-center gap-1">
             <Globe className="w-3 h-3 text-zinc-400" />
-            Mode: {config.useProxy ? 'Local Vite Proxy' : 'Direct HTTPS'}
+            Mode: {config.useProxy ? 'Local Dev Proxy' : 'Direct HTTPS'}
           </div>
         </div>
 
-        {/* Card 4: Media Storage (Cloudflare R2) */}
+        {/* Card 4: Media Storage */}
         <div className="bg-zinc-800/50 hover:bg-zinc-800/80 transition border border-zinc-700/50 rounded-xl p-3.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400 text-xs mb-1">
             <span className="flex items-center gap-1.5">
               <Database className="w-3.5 h-3.5 text-purple-400" />
-              R2 Media Bucket
+              Media Storage
             </span>
             <span className="text-[10px] font-semibold text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">
-              Cloudflare
+              Storage
             </span>
           </div>
           <div className="font-mono text-sm font-semibold text-purple-300">
-            {config.mediaBucket}
+            {config.mediaBucket || <span className="text-zinc-500 italic font-sans text-xs">Default bucket</span>}
           </div>
           <div className="text-[11px] text-zinc-400 mt-1 flex items-center justify-between">
             <span className="text-zinc-500">Invoices & Media</span>
-            <span className="text-zinc-400 text-[10px]">Ready</span>
+            <span className="text-zinc-400 text-[10px]">{config.mediaBucket ? 'Custom' : 'Direct URL'}</span>
           </div>
         </div>
       </div>

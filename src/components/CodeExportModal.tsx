@@ -28,14 +28,16 @@ export const CodeExportModal: React.FC<CodeExportModalProps> = ({
     setTimeout(() => setCopiedKey(null), 1800);
   };
 
-  const cleanPhone = targetPhone.replace(/\D/g, '') || '919761304821';
-  const cleanBaseUrl = config.baseUrl.replace(/\/+$/, '');
+  const cleanPhone = targetPhone.replace(/\D/g, '') || '1234567890';
+  const cleanBaseUrl = (config.baseUrl || 'https://your-evolution-api.example.com').replace(/\/+$/, '');
+  const activeInstance = config.instance || 'YOUR_INSTANCE_NAME';
+  const activeApiKey = config.apiKey || 'YOUR_API_KEY';
 
   const tsCode = `// WhatsApp Hub Evolution API Client
 export class WhatsAppHubClient {
   private baseUrl: string = '${cleanBaseUrl}';
-  private instance: string = '${config.instance}';
-  private apiKey: string = '${config.apiKey}';
+  private instance: string = '${activeInstance}';
+  private apiKey: string = '${activeApiKey}';
 
   async sendText(toPhone: string, text: string) {
     const cleanPhone = toPhone.replace(/\\D/g, '');
@@ -85,37 +87,37 @@ export class WhatsAppHubClient {
 
 // Example Usage:
 const client = new WhatsAppHubClient();
-await client.sendText('${cleanPhone}', ${JSON.stringify(messageText || 'Hello from BiteChez!')});`;
+await client.sendText('${cleanPhone}', ${JSON.stringify(messageText || 'Hello from WhatsApp API!')});`;
 
   const curlCode = `# 1. Check Connection Status
-curl -X GET "${cleanBaseUrl}/instance/connectionState/${config.instance}" \\
-  -H "apikey: ${config.apiKey}"
+curl -X GET "${cleanBaseUrl}/instance/connectionState/${activeInstance}" \\
+  -H "apikey: ${activeApiKey}"
 
 # 2. Verify WhatsApp Number
-curl -X POST "${cleanBaseUrl}/chat/whatsappNumbers/${config.instance}" \\
-  -H "apikey: ${config.apiKey}" \\
+curl -X POST "${cleanBaseUrl}/chat/whatsappNumbers/${activeInstance}" \\
+  -H "apikey: ${activeApiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{"numbers": ["+${cleanPhone}"]}'
 
 # 3. Send Text Message
-curl -X POST "${cleanBaseUrl}/message/sendText/${config.instance}" \\
-  -H "apikey: ${config.apiKey}" \\
+curl -X POST "${cleanBaseUrl}/message/sendText/${activeInstance}" \\
+  -H "apikey: ${activeApiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "number": "+${cleanPhone}",
     "text": ${JSON.stringify(messageText || 'Hello! Order confirmed.')}
   }'
 
-# 4. Send Cloudflare R2 Document / Invoice PDF
-curl -X POST "${cleanBaseUrl}/message/sendMedia/${config.instance}" \\
-  -H "apikey: ${config.apiKey}" \\
+# 4. Send Document / PDF
+curl -X POST "${cleanBaseUrl}/message/sendMedia/${activeInstance}" \\
+  -H "apikey: ${activeApiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "number": "+${cleanPhone}",
     "mediatype": "document",
     "mimetype": "application/pdf",
-    "media": "${cleanBaseUrl}/media/r2/file/documents%2FBiteChez_Invoice.pdf",
-    "fileName": "BiteChez_Invoice_5482.pdf"
+    "media": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    "fileName": "Invoice_Sample.pdf"
   }'`;
 
   const nodeWebhook = `// Webhooks Receiver (Node.js / Express Example)
@@ -123,7 +125,7 @@ const express = require('express');
 const app = express();
 app.use(express.json());
 
-// Register at: POST ${cleanBaseUrl}/webhook/set/${config.instance}
+// Register at: POST ${cleanBaseUrl}/webhook/set/${activeInstance}
 app.post('/api/webhooks/whatsapp', (req, res) => {
   const { event, instance, data } = req.body;
   console.log(\`Received WhatsApp Event: \${event} for instance: \${instance}\`);
@@ -142,12 +144,12 @@ app.post('/api/webhooks/whatsapp', (req, res) => {
 
 app.listen(3000, () => console.log('WhatsApp Webhook server listening on port 3000'));`;
 
-  const widgetCode = `<!-- 1-Line Embed Widget (BiteChez, HTML, Shopify) -->
+  const widgetCode = `<!-- 1-Line Embed Widget -->
 <script src="${cleanBaseUrl}/sdk/whatsapp-widget.js"
-        data-instance="${config.instance}"
-        data-phone="${config.connectedNumber}"
-        data-brand="BiteChez"
-        data-greeting="Hi! Need help with your order?">
+        data-instance="${activeInstance}"
+        data-phone="${config.connectedNumber || '+1234567890'}"
+        data-brand="WhatsApp Support"
+        data-greeting="Hi! How can we help you today?">
 </script>`;
 
   const getCurrentCode = () => {

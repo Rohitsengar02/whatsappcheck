@@ -38,10 +38,9 @@ export const RecipientInput: React.FC<RecipientInputProps> = ({
   verificationResult,
   defaultNumber,
 }) => {
-  const [recentNumbers, setRecentNumbers] = useState<string[]>([
-    defaultNumber,
-    '+919876543210',
-  ]);
+  const [recentNumbers, setRecentNumbers] = useState<string[]>(() => {
+    return defaultNumber ? [defaultNumber] : [];
+  });
 
   const sanitized = sanitizePhoneNumber(phoneNumber);
 
@@ -58,20 +57,22 @@ export const RecipientInput: React.FC<RecipientInputProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white">Recipient WhatsApp Mobile Number</h3>
-            <p className="text-xs text-zinc-400">Enter international phone with country code (e.g. +91)</p>
+            <p className="text-xs text-zinc-400">Enter international phone with country code (e.g. +91, +1, +44)</p>
           </div>
         </div>
 
-        {/* Quick fill default number */}
-        <button
-          type="button"
-          onClick={() => handleApplyPreset(defaultNumber)}
-          className="text-xs px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-teal-300 rounded-lg transition border border-zinc-700/60 flex items-center gap-1.5"
-          title="Fill connected test WhatsApp number"
-        >
-          <Sparkles className="w-3 h-3 text-teal-400" />
-          <span>Use Connected Number ({defaultNumber})</span>
-        </button>
+        {/* Quick fill default number if provided in config */}
+        {defaultNumber && (
+          <button
+            type="button"
+            onClick={() => handleApplyPreset(defaultNumber)}
+            className="text-xs px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-teal-300 rounded-lg transition border border-zinc-700/60 flex items-center gap-1.5"
+            title="Fill connected test WhatsApp number"
+          >
+            <Sparkles className="w-3 h-3 text-teal-400" />
+            <span>Use Connected Number ({defaultNumber})</span>
+          </button>
+        )}
       </div>
 
       {/* Input Group */}
@@ -110,10 +111,10 @@ export const RecipientInput: React.FC<RecipientInputProps> = ({
           <div className="relative flex-1">
             <input
               type="tel"
-              placeholder="+919761304821 or 919761304821"
+              placeholder="+1234567890 (e.g. +919876543210)"
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-700/90 rounded-xl px-4 py-2.5 text-sm font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              className="w-full bg-zinc-950 border border-zinc-700/90 rounded-xl px-4 py-2.5 text-sm font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
             />
           </div>
 

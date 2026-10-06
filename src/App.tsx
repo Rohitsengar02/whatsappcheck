@@ -60,6 +60,15 @@ export default function App() {
       const saved = localStorage.getItem('wa_api_config');
       if (saved) {
         const parsed = JSON.parse(saved);
+        // Clear previous hardcoded instance or key so user enters their own credentials
+        if (
+          parsed.instance === 'user_yrztomld6vqiqgjt' ||
+          parsed.apiKey === '429683C4C977415CAAFCCE10F7D57E11' ||
+          parsed.apiKey === 'wapi_live_429683c4c977415caafcce10f7d57e11'
+        ) {
+          localStorage.removeItem('wa_api_config');
+          return DEFAULT_CONFIG;
+        }
         if (parsed.apiKey) {
           parsed.apiKey = normalizeApiKey(parsed.apiKey);
         }
@@ -79,18 +88,20 @@ export default function App() {
     } catch {
       // ignore
     }
-    addToast('success', 'Configuration Saved', 'API credentials and proxy preferences updated.');
+    addToast('success', 'Configuration Saved', 'API credentials updated. Connecting to instance...');
     // Re-check connection immediately with new credentials
-    checkConnection(newConfig);
+    if (newConfig.baseUrl && newConfig.instance && newConfig.apiKey) {
+      checkConnection(newConfig);
+    }
   };
 
   // Connection State
   const [connectionState, setConnectionState] = useState<ConnectionStateData | null>(null);
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(20); // 20 seconds default
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(0); // Off by default until connected
 
   // Recipient Number & Verification
-  const [phoneNumber, setPhoneNumber] = useState<string>(config.connectedNumber);
+  const [phoneNumber, setPhoneNumber] = useState<string>(config.connectedNumber || '');
   const [isVerifyingNumber, setIsVerifyingNumber] = useState(false);
   const [isVerifyingSelf, setIsVerifyingSelf] = useState(false);
   const [verificationResult, setVerificationResult] = useState<WhatsAppNumberVerification | null>(null);
@@ -98,7 +109,7 @@ export default function App() {
   // Template State & Customization
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(PRESET_TEMPLATES[0].id);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({
-    customerName: 'Rohit Sharma',
+    customerName: 'Customer',
     orderId: 'BC-8492',
     amount: '649',
     deliveryMins: '28',
@@ -107,15 +118,15 @@ export default function App() {
   // Message Payload State
   const [messageType, setMessageType] = useState<'text' | 'media'>('text');
   const [textMessage, setTextMessage] = useState<string>(
-    '🎉 *Order Confirmed!* \n\nHello *Rohit Sharma*, thank you for dining with *BiteChez*!\n\n📦 *Order ID:* #BC-8492\n🍔 *Items:* 1x Truffle Smash Burger, 1x Crispy Parmesan Fries, 1x Berry Mojito\n💰 *Total Paid:* ₹649\n⏳ *Estimated Delivery:* 28 minutes\n\n🛵 You can track your rider in real time: https://www.bitechez.com/track/BC-8492\n\n_Need help? Reply to this message anytime!_'
+    '🎉 *Order Confirmed!* \n\nHello *Customer*, thank you for dining with us!\n\n📦 *Order ID:* #BC-8492\n🍔 *Items:* 1x Truffle Smash Burger, 1x Crispy Parmesan Fries\n💰 *Total Paid:* ₹649\n⏳ *Estimated Delivery:* 28 minutes\n\n_Need help? Reply to this message anytime!_'
   );
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('document');
   const [mediaUrl, setMediaUrl] = useState<string>(
-    'https://whatsappapi-1n7u.onrender.com/media/r2/file/documents%2FBiteChez_Invoice.pdf'
+    'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
   );
-  const [fileName, setFileName] = useState<string>('BiteChez_Invoice_5482.pdf');
+  const [fileName, setFileName] = useState<string>('Invoice_Sample.pdf');
   const [caption, setCaption] = useState<string>(
-    '🧾 Here is your official GST tax invoice for Order #5482 from BiteChez. Thank you for your patronage!'
+    '🧾 Here is your official invoice for Order #BC-8492. Thank you for your patronage!'
   );
 
   // Dispatch & UI States
@@ -144,6 +155,9 @@ export default function App() {
   // Connection Checker Function
   const checkConnection = useCallback(
     async (currentConfig = config) => {
+      if (!currentConfig.baseUrl || !currentConfig.instance || !currentConfig.apiKey) {
+        return;
+      }
       setIsCheckingConnection(true);
       try {
         const result = await fetchConnectionState(currentConfig);
@@ -158,22 +172,35 @@ export default function App() {
     [config]
   );
 
-  // Check connection on mount
+  // Check connection on mount (only if configured)
   useEffect(() => {
-    checkConnection();
-  }, [checkConnection]);
+    if (config.baseUrl && config.instance && config.apiKey) {
+      checkConnection();
+    }
+  }, [checkConnection, config.baseUrl, config.instance, config.apiKey]);
 
   // Auto-refresh timer for connection status
   useEffect(() => {
-    if (autoRefreshInterval <= 0) return;
+    if (autoRefreshInterval <= 0 || !config.baseUrl || !config.instance || !config.apiKey) return;
     const intervalId = setInterval(() => {
       checkConnection();
     }, autoRefreshInterval * 1000);
     return () => clearInterval(intervalId);
-  }, [autoRefreshInterval, checkConnection]);
+  }, [autoRefreshInterval, checkConnection, config.baseUrl, config.instance, config.apiKey]);
 
   // Verify Phone Number
   const handleVerifyNumber = async (phone: string, isSelf = false) => {
+    if (!config.baseUrl || !config.instance || !config.apiKey) {
+      addToast('info', 'Credentials Required', 'Please enter your WhatsApp API credentials in Config to connect first.');
+      setIsSettingsOpen(true);
+      return;
+    }
+
+    if (!phone || !sanitizePhoneNumber(phone)) {
+      addToast('error', 'Missing Phone Number', 'Please enter a valid mobile number with country code.');
+      return;
+    }
+
     if (isSelf) {
       setIsVerifyingSelf(true);
     } else {
@@ -300,6 +327,12 @@ export default function App() {
 
   // Trigger Send Message Action
   const handleSendMessage = async () => {
+    if (!config.baseUrl || !config.instance || !config.apiKey) {
+      addToast('error', 'Instance Not Configured', 'Please configure your WhatsApp API credentials in Config before sending.');
+      setIsSettingsOpen(true);
+      return;
+    }
+
     const cleanPhone = sanitizePhoneNumber(phoneNumber);
     if (!cleanPhone) {
       addToast('error', 'Missing Phone Number', 'Please enter a valid WhatsApp mobile number with country code.');
@@ -356,20 +389,22 @@ export default function App() {
   // Copy current active cURL command
   const handleCopyCurrentCurl = () => {
     const cleanPhone = sanitizePhoneNumber(phoneNumber);
-    const cleanBase = config.baseUrl.replace(/\/+$/, '');
+    const cleanBase = (config.baseUrl || 'https://your-evolution-api.example.com').replace(/\/+$/, '');
+    const instance = config.instance || 'YOUR_INSTANCE_NAME';
+    const apiKey = config.apiKey || 'YOUR_API_KEY';
     let endpoint = '';
     let body = {};
 
     if (messageType === 'text') {
-      endpoint = `${cleanBase}/message/sendText/${config.instance}`;
+      endpoint = `${cleanBase}/message/sendText/${instance}`;
       body = {
-        number: cleanPhone ? `+${cleanPhone}` : '+919761304821',
+        number: cleanPhone ? `+${cleanPhone}` : '+1234567890',
         text: textMessage,
       };
     } else {
-      endpoint = `${cleanBase}/message/sendMedia/${config.instance}`;
+      endpoint = `${cleanBase}/message/sendMedia/${instance}`;
       body = {
-        number: cleanPhone ? `+${cleanPhone}` : '+919761304821',
+        number: cleanPhone ? `+${cleanPhone}` : '+1234567890',
         mediatype: mediaType,
         mimetype: mediaType === 'document' ? 'application/pdf' : 'image/jpeg',
         media: mediaUrl,
@@ -378,7 +413,7 @@ export default function App() {
       };
     }
 
-    const curl = generateCurlCommand('POST', endpoint, config.apiKey, body);
+    const curl = generateCurlCommand('POST', endpoint, apiKey, body);
     navigator.clipboard.writeText(curl);
     setIsCurlCopied(true);
     setTimeout(() => setIsCurlCopied(false), 2000);

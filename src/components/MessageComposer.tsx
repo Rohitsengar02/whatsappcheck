@@ -41,18 +41,18 @@ interface MessageComposerProps {
 
 const SAMPLE_MEDIA_PRESETS = [
   {
-    label: '🧾 BiteChez Invoice PDF (Cloudflare R2)',
+    label: '🧾 Sample PDF Document',
     type: 'document' as const,
-    url: 'https://whatsappapi-1n7u.onrender.com/media/r2/file/documents%2FBiteChez_Invoice.pdf',
-    fileName: 'BiteChez_Invoice_5482.pdf',
-    caption: 'Official GST Tax Invoice from BiteChez Bistro.',
+    url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    fileName: 'sample_document.pdf',
+    caption: 'Official document attachment.',
   },
   {
     label: '🍔 Gourmet Burger Image',
     type: 'image' as const,
     url: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=900&auto=format&fit=crop&q=80',
-    fileName: 'cheeseburger.jpg',
-    caption: 'Craving something delicious? Order BiteChez signature burger today!',
+    fileName: 'burger.jpg',
+    caption: 'Craving something delicious? Check out our special menu today!',
   },
   {
     label: '🍕 Artisan Pizza Image',
