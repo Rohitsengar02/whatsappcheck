@@ -3,48 +3,77 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Smartphone,
-  Server,
-  Settings,
-  Code2,
-  Bell,
   CheckCircle2,
   AlertTriangle,
-  X,
-  ExternalLink,
   Zap,
-  Globe,
-  ShieldCheck,
-  RefreshCw
+  X,
+  Smartphone
 } from 'lucide-react';
 import {
-  ApiLogEntry,
+  AbandonedCartLead,
+  AutomationRule,
+  AutoMessageRule,
+  CatalogProduct,
   ConnectionStateData,
+  ContactItem,
   DEFAULT_CONFIG,
-  MessageTemplate,
+  DripSequence,
+  DripStep,
+  InboxConversation,
+  MessageLogItem,
+  ScheduledMessageItem,
   WhatsAppConfig,
-  WhatsAppNumberVerification,
-} from './types/whatsapp';
-import { PRESET_TEMPLATES } from './data/templates';
+  WhatsAppGroup,
+  WhatsAppPoll,
+} from './types/dashboard';
+import {
+  INITIAL_AUTOMATIONS,
+  INITIAL_AUTO_MESSAGES,
+  INITIAL_CART_LEADS,
+  INITIAL_CATALOG_PRODUCTS,
+  INITIAL_CONTACTS,
+  INITIAL_CONVERSATIONS,
+  INITIAL_DRIP_SEQUENCES,
+  INITIAL_GROUPS,
+  INITIAL_POLLS,
+  INITIAL_SCHEDULED,
+} from './data/mockData';
+import { MessageTemplate } from './types/whatsapp';
 import {
   fetchConnectionState,
-  generateCurlCommand,
   normalizeApiKey,
   sanitizePhoneNumber,
   sendMediaMessage,
   sendTextMessage,
   verifyNumber,
 } from './services/whatsappService';
-import { StatusDashboard } from './components/StatusDashboard';
-import { RecipientInput } from './components/RecipientInput';
-import { TemplatePicker } from './components/TemplatePicker';
-import { MessageComposer } from './components/MessageComposer';
-import { PhonePreview } from './components/PhonePreview';
-import { ConsoleInspector } from './components/ConsoleInspector';
-import { SettingsModal } from './components/SettingsModal';
-import { CodeExportModal } from './components/CodeExportModal';
+
+import { Sidebar, NavTabId } from './components/layout/Sidebar';
+import { Header } from './components/layout/Header';
+import { OverviewView } from './components/views/OverviewView';
+import { MessageSenderView } from './components/views/MessageSenderView';
+import { BroadcastView } from './components/views/BroadcastView';
+import { ScheduledView } from './components/views/ScheduledView';
+import { AutomationsView } from './components/views/AutomationsView';
+import { AutoResponderView } from './components/views/AutoResponderView';
+import { AiCopilotView } from './components/views/AiCopilotView';
+import { QrGeneratorView } from './components/views/QrGeneratorView';
+import { InteractiveButtonsView } from './components/views/InteractiveButtonsView';
+import { NumberValidatorView } from './components/views/NumberValidatorView';
+import { WebhooksManagerView } from './components/views/WebhooksManagerView';
+import { SupportTicketsView } from './components/views/SupportTicketsView';
+import { DripSequencesView } from './components/views/DripSequencesView';
+import { CartRecoveryView } from './components/views/CartRecoveryView';
+import { CatalogPaymentsView } from './components/views/CatalogPaymentsView';
+import { GroupsManagerView } from './components/views/GroupsManagerView';
+import { PollsSurveysView } from './components/views/PollsSurveysView';
+import { LiveInboxView } from './components/views/LiveInboxView';
+import { TemplatesView } from './components/views/TemplatesView';
+import { ContactsView } from './components/views/ContactsView';
+import { AnalyticsReportsView } from './components/views/AnalyticsReportsView';
+import { SettingsView } from './components/views/SettingsView';
 
 interface ToastNotification {
   id: string;
@@ -54,18 +83,20 @@ interface ToastNotification {
 }
 
 export default function App() {
-  // Configuration State
+  const [activeTab, setActiveTab] = useState<NavTabId>('overview');
+
+  // WhatsApp Channel Credentials
   const [config, setConfig] = useState<WhatsAppConfig>(() => {
     try {
-      const saved = localStorage.getItem('wa_api_config');
+      const saved = localStorage.getItem('sengar_wa_config') || localStorage.getItem('wa_api_config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Clear previous hardcoded instance or key so user enters their own credentials
         if (
           parsed.instance === 'user_yrztomld6vqiqgjt' ||
           parsed.apiKey === '429683C4C977415CAAFCCE10F7D57E11' ||
           parsed.apiKey === 'wapi_live_429683c4c977415caafcce10f7d57e11'
         ) {
+          localStorage.removeItem('sengar_wa_config');
           localStorage.removeItem('wa_api_config');
           return DEFAULT_CONFIG;
         }
@@ -80,64 +111,26 @@ export default function App() {
     return DEFAULT_CONFIG;
   });
 
-  // Save config changes to localStorage
-  const handleSaveConfig = (newConfig: WhatsAppConfig) => {
-    setConfig(newConfig);
-    try {
-      localStorage.setItem('wa_api_config', JSON.stringify(newConfig));
-    } catch {
-      // ignore
-    }
-    addToast('success', 'Configuration Saved', 'API credentials updated. Connecting to instance...');
-    // Re-check connection immediately with new credentials
-    if (newConfig.baseUrl && newConfig.instance && newConfig.apiKey) {
-      checkConnection(newConfig);
-    }
-  };
-
-  // Connection State
+  // State Data
   const [connectionState, setConnectionState] = useState<ConnectionStateData | null>(null);
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(0); // Off by default until connected
-
-  // Recipient Number & Verification
-  const [phoneNumber, setPhoneNumber] = useState<string>(config.connectedNumber || '');
-  const [isVerifyingNumber, setIsVerifyingNumber] = useState(false);
-  const [isVerifyingSelf, setIsVerifyingSelf] = useState(false);
-  const [verificationResult, setVerificationResult] = useState<WhatsAppNumberVerification | null>(null);
-
-  // Template State & Customization
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(PRESET_TEMPLATES[0].id);
-  const [variableValues, setVariableValues] = useState<Record<string, string>>({
-    customerName: 'Customer',
-    orderId: 'BC-8492',
-    amount: '649',
-    deliveryMins: '28',
-  });
-
-  // Message Payload State
-  const [messageType, setMessageType] = useState<'text' | 'media'>('text');
-  const [textMessage, setTextMessage] = useState<string>(
-    '🎉 *Order Confirmed!* \n\nHello *Customer*, thank you for dining with us!\n\n📦 *Order ID:* #BC-8492\n🍔 *Items:* 1x Truffle Smash Burger, 1x Crispy Parmesan Fries\n💰 *Total Paid:* ₹649\n⏳ *Estimated Delivery:* 28 minutes\n\n_Need help? Reply to this message anytime!_'
-  );
-  const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('document');
-  const [mediaUrl, setMediaUrl] = useState<string>(
-    'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
-  );
-  const [fileName, setFileName] = useState<string>('Invoice_Sample.pdf');
-  const [caption, setCaption] = useState<string>(
-    '🧾 Here is your official invoice for Order #BC-8492. Thank you for your patronage!'
-  );
-
-  // Dispatch & UI States
   const [isSending, setIsSending] = useState(false);
-  const [isCurlCopied, setIsCurlCopied] = useState(false);
-  const [logs, setLogs] = useState<ApiLogEntry[]>([]);
-  const [toasts, setToasts] = useState<ToastNotification[]>([]);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
 
-  // Modals
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isCodeExportOpen, setIsCodeExportOpen] = useState(false);
+  // Modular Data States
+  const [contacts, setContacts] = useState<ContactItem[]>(INITIAL_CONTACTS);
+  const [automations, setAutomations] = useState<AutomationRule[]>(INITIAL_AUTOMATIONS);
+  const [autoMessages, setAutoMessages] = useState<AutoMessageRule[]>(INITIAL_AUTO_MESSAGES);
+  const [scheduledList, setScheduledList] = useState<ScheduledMessageItem[]>(INITIAL_SCHEDULED);
+  const [dripSequences, setDripSequences] = useState<DripSequence[]>(INITIAL_DRIP_SEQUENCES);
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>(INITIAL_CATALOG_PRODUCTS);
+  const [groups, setGroups] = useState<WhatsAppGroup[]>(INITIAL_GROUPS);
+  const [cartLeads, setCartLeads] = useState<AbandonedCartLead[]>(INITIAL_CART_LEADS);
+  const [polls, setPolls] = useState<WhatsAppPoll[]>(INITIAL_POLLS);
+  const [conversations, setConversations] = useState<InboxConversation[]>(INITIAL_CONVERSATIONS);
+  const [logs, setLogs] = useState<MessageLogItem[]>([]);
+  const [toasts, setToasts] = useState<ToastNotification[]>([]);
 
   // Toast Helper
   const addToast = (type: 'success' | 'error' | 'info', title: string, message: string) => {
@@ -152,19 +145,24 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Connection Checker Function
+  // Connection State Checker
   const checkConnection = useCallback(
     async (currentConfig = config) => {
       if (!currentConfig.baseUrl || !currentConfig.instance || !currentConfig.apiKey) {
+        setConnectionState(null);
         return;
       }
       setIsCheckingConnection(true);
       try {
         const result = await fetchConnectionState(currentConfig);
         setConnectionState(result.state);
-        setLogs((prev) => [result.log, ...prev].slice(0, 50));
+        if (result.state.status === 'open') {
+          addToast('success', 'Instance Online', `Connected to WhatsApp instance: ${currentConfig.instance}`);
+        } else if (result.state.status === 'close') {
+          addToast('error', 'Session Closed', 'WhatsApp instance session is currently closed. Pair phone via QR code.');
+        }
       } catch (err: any) {
-        addToast('error', 'Connection Check Failed', err?.message || 'Network error');
+        addToast('error', 'Connection Error', err?.message || 'Could not reach server.');
       } finally {
         setIsCheckingConnection(false);
       }
@@ -172,447 +170,628 @@ export default function App() {
     [config]
   );
 
-  // Check connection on mount (only if configured)
   useEffect(() => {
     if (config.baseUrl && config.instance && config.apiKey) {
       checkConnection();
     }
   }, [checkConnection, config.baseUrl, config.instance, config.apiKey]);
 
-  // Auto-refresh timer for connection status
-  useEffect(() => {
-    if (autoRefreshInterval <= 0 || !config.baseUrl || !config.instance || !config.apiKey) return;
-    const intervalId = setInterval(() => {
-      checkConnection();
-    }, autoRefreshInterval * 1000);
-    return () => clearInterval(intervalId);
-  }, [autoRefreshInterval, checkConnection, config.baseUrl, config.instance, config.apiKey]);
-
-  // Verify Phone Number
-  const handleVerifyNumber = async (phone: string, isSelf = false) => {
-    if (!config.baseUrl || !config.instance || !config.apiKey) {
-      addToast('info', 'Credentials Required', 'Please enter your WhatsApp API credentials in Config to connect first.');
-      setIsSettingsOpen(true);
-      return;
-    }
-
-    if (!phone || !sanitizePhoneNumber(phone)) {
-      addToast('error', 'Missing Phone Number', 'Please enter a valid mobile number with country code.');
-      return;
-    }
-
-    if (isSelf) {
-      setIsVerifyingSelf(true);
-    } else {
-      setIsVerifyingNumber(true);
-    }
-
+  const handleSaveConfig = (newConfig: WhatsAppConfig) => {
+    setConfig(newConfig);
     try {
-      const res = await verifyNumber(config, phone);
-      setLogs((prev) => [res.log, ...prev].slice(0, 50));
-
-      if (!isSelf) {
-        setVerificationResult(res.verification);
-      }
-
-      if (res.verification.exists) {
-        addToast(
-          'success',
-          'WhatsApp Account Verified',
-          `${phone} is registered on WhatsApp! (JID: ${res.verification.jid || 'valid'})`
-        );
-      } else {
-        addToast(
-          'error',
-          'Not Registered',
-          `${phone} was not recognized as an active WhatsApp account by the network.`
-        );
-      }
-    } catch (err: any) {
-      addToast('error', 'Verification Failed', err?.message || 'Error communicating with API');
-    } finally {
-      setIsVerifyingNumber(false);
-      setIsVerifyingSelf(false);
+      localStorage.setItem('sengar_wa_config', JSON.stringify(newConfig));
+    } catch {
+      // ignore
+    }
+    addToast('success', 'Credentials Saved', 'Connecting to your WhatsApp instance...');
+    if (newConfig.baseUrl && newConfig.instance && newConfig.apiKey) {
+      checkConnection(newConfig);
     }
   };
 
-  // Template Selection Handler
-  const handleSelectTemplate = (
-    template: MessageTemplate,
-    resolvedText: string,
-    resolvedCaption?: string
-  ) => {
-    setSelectedTemplateId(template.id);
-    setMessageType(template.type);
-
-    if (template.type === 'text') {
-      setTextMessage(resolvedText);
-    } else {
-      if (template.mediaType) setMediaType(template.mediaType);
-      if (template.mediaUrl) setMediaUrl(template.mediaUrl);
-      if (template.fileName) setFileName(template.fileName);
-      setCaption(resolvedCaption || '');
+  const handleClearCredentials = () => {
+    setConfig(DEFAULT_CONFIG);
+    setConnectionState(null);
+    try {
+      localStorage.removeItem('sengar_wa_config');
+      localStorage.removeItem('wa_api_config');
+    } catch {
+      // ignore
     }
-
-    addToast('info', 'Template Applied', `"${template.title}" loaded into composer.`);
+    addToast('info', 'Credentials Cleared', 'WhatsApp channel disconnected.');
   };
 
-  // Variable Change Handler
-  const handleVariableChange = (key: string, value: string) => {
-    const updated = { ...variableValues, [key]: value };
-    setVariableValues(updated);
-
-    // If template is active, re-substitute
-    const currentTpl = PRESET_TEMPLATES.find((t) => t.id === selectedTemplateId);
-    if (currentTpl) {
-      let tText = currentTpl.text;
-      let tCaption = currentTpl.caption || '';
-      currentTpl.variables.forEach((v) => {
-        const val = updated[v.key] ?? v.defaultValue;
-        const regex = new RegExp(`{{${v.key}}}`, 'g');
-        tText = tText.replace(regex, val);
-        tCaption = tCaption.replace(regex, val);
-      });
-
-      if (currentTpl.type === 'text') {
-        setTextMessage(tText);
-      } else {
-        setCaption(tCaption);
-      }
-    }
-  };
-
-  // Randomize Variables
-  const handleRandomizeVariables = () => {
-    const randomOrderNumber = Math.floor(1000 + Math.random() * 9000);
-    const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    const randomNames = ['Aarav Patel', 'Pooja Verma', 'Vikram Malhotra', 'Sanya Gupta', 'Karan Mehta'];
-    const randomName = randomNames[Math.floor(Math.random() * randomNames.length)];
-    const randomAmounts = ['499', '780', '1,250', '340', '920'];
-    const randomAmount = randomAmounts[Math.floor(Math.random() * randomAmounts.length)];
-
-    const updated: Record<string, string> = {
-      ...variableValues,
-      customerName: randomName,
-      guestName: randomName,
-      orderId: `BC-${randomOrderNumber}`,
-      resCode: `RES-${randomOrderNumber}`,
-      amount: randomAmount,
-      otpCode: randomOtp,
-      deliveryMins: String(Math.floor(20 + Math.random() * 25)),
-    };
-
-    setVariableValues(updated);
-
-    const currentTpl = PRESET_TEMPLATES.find((t) => t.id === selectedTemplateId);
-    if (currentTpl) {
-      let tText = currentTpl.text;
-      let tCaption = currentTpl.caption || '';
-      currentTpl.variables.forEach((v) => {
-        const val = updated[v.key] ?? v.defaultValue;
-        const regex = new RegExp(`{{${v.key}}}`, 'g');
-        tText = tText.replace(regex, val);
-        tCaption = tCaption.replace(regex, val);
-      });
-
-      if (currentTpl.type === 'text') {
-        setTextMessage(tText);
-      } else {
-        setCaption(tCaption);
-      }
-    }
-
-    addToast('info', 'Data Randomized', 'Generated fresh simulated order, OTP, and customer values.');
-  };
-
-  // Trigger Send Message Action
-  const handleSendMessage = async () => {
+  // Send Direct Message
+  const handleSendDirectMessage = async (params: {
+    toPhone: string;
+    text?: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video' | 'audio' | 'document';
+    fileName?: string;
+    caption?: string;
+  }) => {
     if (!config.baseUrl || !config.instance || !config.apiKey) {
-      addToast('error', 'Instance Not Configured', 'Please configure your WhatsApp API credentials in Config before sending.');
-      setIsSettingsOpen(true);
+      addToast('error', 'Channel Not Connected', 'Please enter your WhatsApp instance credentials in Channel Setup first.');
+      setActiveTab('settings');
       return;
     }
 
-    const cleanPhone = sanitizePhoneNumber(phoneNumber);
+    const cleanPhone = sanitizePhoneNumber(params.toPhone);
     if (!cleanPhone) {
-      addToast('error', 'Missing Phone Number', 'Please enter a valid WhatsApp mobile number with country code.');
+      addToast('error', 'Missing Phone Number', 'Please enter a valid international mobile number.');
       return;
     }
 
     setIsSending(true);
     try {
-      let result;
-      if (messageType === 'text') {
-        if (!textMessage.trim()) {
-          addToast('error', 'Empty Message', 'Please enter text for the WhatsApp message.');
-          setIsSending(false);
-          return;
-        }
-        result = await sendTextMessage(config, cleanPhone, textMessage);
-      } else {
-        if (!mediaUrl.trim()) {
-          addToast('error', 'Missing Media URL', 'Please enter a valid media URL.');
-          setIsSending(false);
-          return;
-        }
-        result = await sendMediaMessage(config, {
+      let res;
+      if (params.text) {
+        res = await sendTextMessage(config, cleanPhone, params.text);
+      } else if (params.mediaUrl) {
+        res = await sendMediaMessage(config, {
           toPhone: cleanPhone,
-          mediaUrl,
-          mediaType,
-          caption,
-          fileName,
+          mediaUrl: params.mediaUrl,
+          mediaType: params.mediaType || 'image',
+          fileName: params.fileName,
+          caption: params.caption,
         });
       }
 
-      setLogs((prev) => [result.log, ...prev].slice(0, 50));
-
-      if (result.success) {
-        addToast(
-          'success',
-          'Message Dispatched! 🚀',
-          `Successfully triggered ${messageType.toUpperCase()} message to +${cleanPhone}. Status: ${result.log.status}`
-        );
+      if (res?.success) {
+        addToast('success', 'Message Delivered', `Sent to +${cleanPhone} successfully!`);
+        setLogs((prev) => [
+          {
+            id: 'log_' + Date.now(),
+            recipientPhone: `+${cleanPhone}`,
+            type: params.text ? 'text' : 'media',
+            content: params.text || params.caption || 'Media Attachment',
+            status: 'delivered',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+          ...prev,
+        ]);
       } else {
-        addToast(
-          'error',
-          'API Error',
-          result.error || `HTTP ${result.log.status}: Check instance connection state.`
-        );
+        addToast('error', 'Delivery Failed', res?.error || 'Could not dispatch message.');
       }
     } catch (err: any) {
-      addToast('error', 'Dispatch Failed', err?.message || 'Could not send WhatsApp message.');
+      addToast('error', 'Dispatch Error', err?.message || 'Network error.');
     } finally {
       setIsSending(false);
     }
   };
 
-  // Copy current active cURL command
-  const handleCopyCurrentCurl = () => {
-    const cleanPhone = sanitizePhoneNumber(phoneNumber);
-    const cleanBase = (config.baseUrl || 'https://your-evolution-api.example.com').replace(/\/+$/, '');
-    const instance = config.instance || 'YOUR_INSTANCE_NAME';
-    const apiKey = config.apiKey || 'YOUR_API_KEY';
-    let endpoint = '';
-    let body = {};
-
-    if (messageType === 'text') {
-      endpoint = `${cleanBase}/message/sendText/${instance}`;
-      body = {
-        number: cleanPhone ? `+${cleanPhone}` : '+1234567890',
-        text: textMessage,
-      };
-    } else {
-      endpoint = `${cleanBase}/message/sendMedia/${instance}`;
-      body = {
-        number: cleanPhone ? `+${cleanPhone}` : '+1234567890',
-        mediatype: mediaType,
-        mimetype: mediaType === 'document' ? 'application/pdf' : 'image/jpeg',
-        media: mediaUrl,
-        caption,
-        fileName,
-      };
+  const handleVerifyNumber = async (phone: string): Promise<boolean> => {
+    if (!config.baseUrl || !config.instance || !config.apiKey) {
+      addToast('error', 'Channel Not Connected', 'Please enter your WhatsApp instance credentials in Channel Setup first.');
+      setActiveTab('settings');
+      return false;
     }
 
-    const curl = generateCurlCommand('POST', endpoint, apiKey, body);
-    navigator.clipboard.writeText(curl);
-    setIsCurlCopied(true);
-    setTimeout(() => setIsCurlCopied(false), 2000);
-    addToast('info', 'cURL Copied', 'Paste into your terminal to test directly from command line.');
+    setIsVerifying(true);
+    try {
+      const res = await verifyNumber(config, phone);
+      return res.verification.exists;
+    } catch {
+      return false;
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
-  // Keyboard shortcut: Cmd/Ctrl + Enter to trigger
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleSendMessage();
+  // Broadcast
+  const handleBroadcastSend = async (params: {
+    recipients: string[];
+    message: string;
+    delaySeconds: number;
+    onProgress: (sent: number, total: number) => void;
+  }) => {
+    if (!config.baseUrl || !config.instance || !config.apiKey) {
+      addToast('error', 'Channel Not Connected', 'Please configure your WhatsApp instance credentials first.');
+      setActiveTab('settings');
+      return;
+    }
+
+    setIsBroadcasting(true);
+    const { recipients, message, delaySeconds, onProgress } = params;
+
+    let sent = 0;
+    for (const phone of recipients) {
+      const clean = sanitizePhoneNumber(phone);
+      if (clean) {
+        try {
+          await sendTextMessage(config, clean, message);
+          sent++;
+          onProgress(sent, recipients.length);
+          setLogs((prev) => [
+            {
+              id: 'log_' + Date.now() + Math.random(),
+              recipientPhone: `+${clean}`,
+              type: 'broadcast',
+              content: message,
+              status: 'delivered',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+            ...prev,
+          ]);
+        } catch {
+          // continue
+        }
+
+        if (sent < recipients.length) {
+          await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+        }
       }
+    }
+
+    setIsBroadcasting(false);
+    addToast('success', 'Broadcast Completed', `Delivered to ${sent} recipients successfully!`);
+  };
+
+  // Scheduled message trigger
+  const handleTriggerScheduledNow = async (item: ScheduledMessageItem) => {
+    await handleSendDirectMessage({
+      toPhone: item.recipientPhone,
+      text: item.message,
+    });
+    setScheduledList((prev) =>
+      prev.map((s) => (s.id === item.id ? { ...s, status: 'sent' } : s))
+    );
+  };
+
+  // Inbox reply
+  const handleSendMessageReply = async (convoId: string, replyText: string) => {
+    const convo = conversations.find((c) => c.id === convoId);
+    if (!convo) return;
+
+    if (config.baseUrl && config.instance && config.apiKey) {
+      await handleSendDirectMessage({
+        toPhone: convo.phone,
+        text: replyText,
+      });
+    } else {
+      addToast('info', 'Reply Simulating', `Mock reply sent to ${convo.contactName} (Connect instance to send live)`);
+    }
+
+    const newMsg = {
+      id: 'm_' + Date.now(),
+      sender: 'user' as const,
+      text: replyText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'sent' as const,
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [phoneNumber, messageType, textMessage, mediaUrl, mediaType, caption, fileName, config]);
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convoId
+          ? {
+              ...c,
+              unreadCount: 0,
+              lastMessageTime: 'Just now',
+              messages: [...c.messages, newMsg],
+            }
+          : c
+      )
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 selection:bg-emerald-500/30 font-sans pb-16">
-      {/* Top Navigation Bar */}
-      <header className="border-b border-zinc-800/80 bg-zinc-900/80 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-950/40">
-              <Smartphone className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  WhatsApp Hub API Studio
-                </h1>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-mono px-2 py-0.5 rounded-full font-semibold border border-emerald-500/30">
-                  Evolution v2
-                </span>
-              </div>
-              <p className="text-[11px] text-zinc-400 hidden sm:block">
-                Interactive testing environment for BiteChez, notifications, media, and verification
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex antialiased selection:bg-emerald-100 selection:text-emerald-900">
+      {/* 1. Left White Sidebar Navigation with 15 Tabs */}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        config={config}
+        connectionState={connectionState}
+        onOpenConnect={() => setActiveTab('settings')}
+      />
 
-          {/* Quick Header Actions */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsCodeExportOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-semibold transition border border-zinc-700/80"
-              title="View & copy SDK code snippets"
-            >
-              <Code2 className="w-3.5 h-3.5 text-purple-400" />
-              <span className="hidden sm:inline">Integration Code</span>
-            </button>
-
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-semibold transition border border-zinc-700/80"
-              title="Configure API base URL, instance, and key"
-            >
-              <Settings className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Config</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Layout */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 space-y-6">
-        {/* Section 1: Realtime WhatsApp Status Dashboard */}
-        <StatusDashboard
+      {/* 2. Main Content Canvas */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* Top Header */}
+        <Header
+          activeTab={activeTab}
           config={config}
           connectionState={connectionState}
-          isLoading={isCheckingConnection}
-          onRefresh={() => checkConnection()}
-          onVerifySelfNumber={() => handleVerifyNumber(config.connectedNumber, true)}
-          isVerifyingSelf={isVerifyingSelf}
-          autoRefreshInterval={autoRefreshInterval}
-          setAutoRefreshInterval={setAutoRefreshInterval}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          isCheckingConnection={isCheckingConnection}
+          onRefreshConnection={() => checkConnection()}
+          onOpenConnect={() => setActiveTab('settings')}
+          onQuickSend={() => setActiveTab('sender')}
         />
 
-        {/* Section 2: Interactive Testing Workspace */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Input, Templates & Composer (8 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            {/* Mobile Number Target Input */}
-            <RecipientInput
-              phoneNumber={phoneNumber}
-              setPhoneNumber={setPhoneNumber}
-              onVerifyNumber={(phone) => handleVerifyNumber(phone, false)}
-              isVerifying={isVerifyingNumber}
-              verificationResult={verificationResult}
-              defaultNumber={config.connectedNumber}
+        {/* View Routing Body */}
+        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+          {activeTab === 'overview' && (
+            <OverviewView
+              config={config}
+              connectionState={connectionState}
+              logs={logs}
+              setActiveTab={setActiveTab}
+              onOpenConnect={() => setActiveTab('settings')}
             />
+          )}
 
-            {/* Template Selector with Variables */}
-            <TemplatePicker
-              selectedTemplateId={selectedTemplateId}
-              onSelectTemplate={handleSelectTemplate}
-              variableValues={variableValues}
-              onVariableChange={handleVariableChange}
-              onRandomizeVariables={handleRandomizeVariables}
-            />
-
-            {/* Message Composer & Trigger Button */}
-            <MessageComposer
-              messageType={messageType}
-              setMessageType={setMessageType}
-              textMessage={textMessage}
-              setTextMessage={setTextMessage}
-              mediaType={mediaType}
-              setMediaType={setMediaType}
-              mediaUrl={mediaUrl}
-              setMediaUrl={setMediaUrl}
-              fileName={fileName}
-              setFileName={setFileName}
-              caption={caption}
-              setCaption={setCaption}
-              onSendMessage={handleSendMessage}
+          {activeTab === 'sender' && (
+            <MessageSenderView
+              config={config}
+              contacts={contacts}
+              onSendMessage={handleSendDirectMessage}
               isSending={isSending}
-              onCopyCurl={handleCopyCurrentCurl}
-              isCurlCopied={isCurlCopied}
-              onClear={() => {
-                setTextMessage('');
-                setCaption('');
+              onVerifyNumber={handleVerifyNumber}
+              isVerifying={isVerifying}
+            />
+          )}
+
+          {activeTab === 'broadcast' && (
+            <BroadcastView
+              config={config}
+              contacts={contacts}
+              onBroadcastSend={handleBroadcastSend}
+              isBroadcasting={isBroadcasting}
+            />
+          )}
+
+          {activeTab === 'live_inbox' && (
+            <LiveInboxView
+              conversations={conversations}
+              onSendMessageReply={handleSendMessageReply}
+            />
+          )}
+
+          {activeTab === 'scheduled' && (
+            <ScheduledView
+              scheduledList={scheduledList}
+              onAddScheduled={(item) => {
+                const newItem: ScheduledMessageItem = {
+                  ...item,
+                  id: 'sch_' + Date.now(),
+                  status: 'pending',
+                  createdAt: 'Just now',
+                };
+                setScheduledList((prev) => [newItem, ...prev]);
+                addToast('success', 'Message Scheduled', `Queued for future delivery.`);
               }}
-              targetPhone={phoneNumber}
+              onCancelScheduled={(id) => {
+                setScheduledList((prev) => prev.filter((s) => s.id !== id));
+                addToast('info', 'Schedule Removed', 'Cancelled from queue.');
+              }}
+              onTriggerNow={handleTriggerScheduledNow}
+              contacts={contacts}
             />
-          </div>
+          )}
 
-          {/* Right Column: Live Phone Mockup Preview (5 cols) */}
-          <div className="lg:col-span-5 sticky top-20">
-            <PhonePreview
-              recipientPhone={phoneNumber}
-              senderPhone={config.connectedNumber}
-              messageType={messageType}
-              textMessage={textMessage}
-              mediaType={mediaType}
-              mediaUrl={mediaUrl}
-              fileName={fileName}
-              caption={caption}
+          {activeTab === 'auto_responder' && (
+            <AutoResponderView
+              autoMessages={autoMessages}
+              contacts={contacts}
+              config={config}
+              onToggleActive={(id) => {
+                setAutoMessages((prev) =>
+                  prev.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r))
+                );
+              }}
+              onAddRule={(rule) => {
+                const newR: AutoMessageRule = {
+                  ...rule,
+                  id: 'am_' + Date.now(),
+                  triggerCount: 0,
+                  lastTriggered: 'Just created',
+                };
+                setAutoMessages((prev) => [newR, ...prev]);
+                addToast('success', 'Auto Message Added', `"${rule.title}" is active.`);
+              }}
+              onDeleteRule={(id) => {
+                setAutoMessages((prev) => prev.filter((r) => r.id !== id));
+                addToast('info', 'Rule Removed', 'Auto message removed.');
+              }}
+              onSendTestMessage={(phone, text) => {
+                handleSendDirectMessage({ toPhone: phone, text });
+              }}
             />
-          </div>
-        </div>
+          )}
 
-        {/* Section 3: Live API Request & Response Console Inspector */}
-        <ConsoleInspector logs={logs} onClearLogs={() => setLogs([])} />
-      </main>
+          {activeTab === 'ai_copilot' && (
+            <AiCopilotView
+              contacts={contacts}
+              onLoadIntoSender={(msg) => {
+                setActiveTab('sender');
+                addToast('info', 'Message Loaded', 'AI message loaded in direct sender.');
+              }}
+              onSendDirect={(phone, msg) => {
+                handleSendDirectMessage({ toPhone: phone, text: msg });
+              }}
+            />
+          )}
 
-      {/* Floating Toast Notifications */}
+          {activeTab === 'interactive_buttons' && (
+            <InteractiveButtonsView
+              config={config}
+              contacts={contacts}
+              onSendToPhone={(phone, text) => {
+                handleSendDirectMessage({ toPhone: phone, text });
+              }}
+            />
+          )}
+
+          {activeTab === 'qr_generator' && (
+            <QrGeneratorView config={config} />
+          )}
+
+          {activeTab === 'number_validator' && (
+            <NumberValidatorView
+              config={config}
+              onAddVerifiedContacts={(newContacts) => {
+                const mapped: ContactItem[] = newContacts.map((c, idx) => ({
+                  id: 'c_val_' + Date.now() + '_' + idx,
+                  name: c.name,
+                  phone: c.phone,
+                  tag: c.tag,
+                  lastContactedAt: 'Imported just now',
+                }));
+                setContacts((prev) => [...mapped, ...prev]);
+                addToast('success', 'Contacts Imported', `Added ${mapped.length} verified leads to audience directory.`);
+                setActiveTab('contacts');
+              }}
+            />
+          )}
+
+          {activeTab === 'webhooks_manager' && (
+            <WebhooksManagerView config={config} />
+          )}
+
+          {activeTab === 'support_tickets' && (
+            <SupportTicketsView
+              onReplyOnWhatsApp={(phone, text) => {
+                handleSendDirectMessage({ toPhone: phone, text });
+              }}
+            />
+          )}
+
+          {activeTab === 'automations' && (
+            <AutomationsView
+              automations={automations}
+              onToggleActive={(id) => {
+                setAutomations((prev) =>
+                  prev.map((a) => (a.id === id ? { ...a, isActive: !a.isActive } : a))
+                );
+              }}
+              onAddRule={(rule) => {
+                const newRule: AutomationRule = {
+                  ...rule,
+                  id: 'auto_' + Date.now(),
+                  triggerCount: 0,
+                };
+                setAutomations((prev) => [newRule, ...prev]);
+                addToast('success', 'Bot Enabled', `"${rule.name}" is now active!`);
+              }}
+              onDeleteRule={(id) => {
+                setAutomations((prev) => prev.filter((a) => a.id !== id));
+                addToast('info', 'Rule Removed', 'Bot deleted.');
+              }}
+            />
+          )}
+
+          {activeTab === 'drip_sequences' && (
+            <DripSequencesView
+              sequences={dripSequences}
+              onToggleSequence={(id) => {
+                setDripSequences((prev) =>
+                  prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s))
+                );
+              }}
+              onAddSequence={(seq) => {
+                const newSeq: DripSequence = {
+                  ...seq,
+                  id: 'drip_' + Date.now(),
+                  enrolledCount: 1,
+                  completedCount: 0,
+                };
+                setDripSequences((prev) => [newSeq, ...prev]);
+                addToast('success', 'Sequence Created', `"${seq.name}" is now active.`);
+              }}
+              onTestStepSend={(step) => {
+                if (contacts[0]) {
+                  handleSendDirectMessage({
+                    toPhone: contacts[0].phone,
+                    text: step.message,
+                  });
+                } else {
+                  addToast('info', 'Step Simulated', `Step: "${step.title}" message tested!`);
+                }
+              }}
+            />
+          )}
+
+          {activeTab === 'cart_recovery' && (
+            <CartRecoveryView
+              leads={cartLeads}
+              onSendRecovery={(lead, coupon) => {
+                handleSendDirectMessage({
+                  toPhone: lead.phone,
+                  text: `🛒 Hi *${lead.customerName}*! We noticed you left items in your cart. Use code *${coupon}* for 15% off: https://shop.sengarhub.com/cart/resume`,
+                });
+                setCartLeads((prev) =>
+                  prev.map((l) => (l.id === lead.id ? { ...l, recoveryStatus: 'recovered' } : l))
+                );
+              }}
+            />
+          )}
+
+          {activeTab === 'catalog_payments' && (
+            <CatalogPaymentsView
+              products={catalogProducts}
+              contacts={contacts}
+              onSendProductInvoice={(params) => {
+                handleSendDirectMessage({
+                  toPhone: params.recipientPhone,
+                  text: `🧾 *Order Invoice & Payment Link*\nItem: *${params.product.name}*\nAmount: *${params.product.currency}${params.product.price.toFixed(2)}*\nPayment Link: https://pay.sengarhub.com/order-8492`,
+                  mediaUrl: params.product.imageUrl,
+                  mediaType: 'image',
+                  caption: `Official order for ${params.customerName}. Complete payment securely above.`,
+                });
+              }}
+              onAddProduct={(prod) => {
+                const newP: CatalogProduct = {
+                  ...prod,
+                  id: 'prod_' + Date.now(),
+                };
+                setCatalogProducts((prev) => [newP, ...prev]);
+                addToast('success', 'Product Added', `"${prod.name}" added to catalog.`);
+              }}
+            />
+          )}
+
+          {activeTab === 'groups_manager' && (
+            <GroupsManagerView
+              groups={groups}
+              onSendGroupAnnouncement={(group, msg) => {
+                addToast('success', 'Announcement Sent', `Delivered to group "${group.name}"!`);
+                setLogs((prev) => [
+                  {
+                    id: 'log_' + Date.now(),
+                    recipientPhone: group.name,
+                    type: 'broadcast',
+                    content: msg,
+                    status: 'delivered',
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  },
+                  ...prev,
+                ]);
+              }}
+              onAddGroup={(grp) => {
+                const newG: WhatsAppGroup = {
+                  ...grp,
+                  id: 'grp_' + Date.now(),
+                  lastActive: 'Just now',
+                };
+                setGroups((prev) => [newG, ...prev]);
+                addToast('success', 'Group Tracked', `Added "${grp.name}" to manager.`);
+              }}
+            />
+          )}
+
+          {activeTab === 'polls_surveys' && (
+            <PollsSurveysView
+              polls={polls}
+              contacts={contacts}
+              onSendPoll={(poll, phone) => {
+                const pollText = `📊 *${poll.question}*\n\n` + poll.options.map((o, idx) => `${idx + 1}. ${o.text}`).join('\n') + '\n\nReply with your option number to vote!';
+                handleSendDirectMessage({
+                  toPhone: phone,
+                  text: pollText,
+                });
+              }}
+              onAddPoll={(poll) => {
+                const newPoll: WhatsAppPoll = {
+                  ...poll,
+                  id: 'poll_' + Date.now(),
+                  totalVotes: 0,
+                  createdAt: 'Just now',
+                  status: 'active',
+                };
+                setPolls((prev) => [newPoll, ...prev]);
+                addToast('success', 'Poll Created', `"${poll.question}" is live!`);
+              }}
+              onSimulateVote={(pollId, optionId) => {
+                setPolls((prev) =>
+                  prev.map((p) => {
+                    if (p.id === pollId) {
+                      const updatedOptions = p.options.map((o) =>
+                        o.id === optionId ? { ...o, votes: o.votes + 1 } : o
+                      );
+                      return {
+                        ...p,
+                        totalVotes: p.totalVotes + 1,
+                        options: updatedOptions,
+                      };
+                    }
+                    return p;
+                  })
+                );
+                addToast('info', 'Vote Recorded', 'Test vote added to poll results.');
+              }}
+            />
+          )}
+
+          {activeTab === 'templates' && (
+            <TemplatesView
+              onUseTemplate={(tpl: MessageTemplate) => {
+                setActiveTab('sender');
+                addToast('info', 'Template Loaded', `"${tpl.title}" ready in sender.`);
+              }}
+            />
+          )}
+
+          {activeTab === 'contacts' && (
+            <ContactsView
+              contacts={contacts}
+              onAddContact={(c) => {
+                const newC: ContactItem = {
+                  ...c,
+                  id: 'c_' + Date.now(),
+                };
+                setContacts((prev) => [newC, ...prev]);
+                addToast('success', 'Contact Added', `${c.name} saved to audience.`);
+              }}
+              onDeleteContact={(id) => {
+                setContacts((prev) => prev.filter((c) => c.id !== id));
+                addToast('info', 'Contact Removed', 'Contact deleted.');
+              }}
+              onMessageContact={(c) => {
+                setActiveTab('sender');
+              }}
+            />
+          )}
+
+          {activeTab === 'analytics_reports' && <AnalyticsReportsView />}
+
+          {activeTab === 'settings' && (
+            <SettingsView
+              config={config}
+              onSaveConfig={handleSaveConfig}
+              connectionState={connectionState}
+              isChecking={isCheckingConnection}
+              onTestConnection={() => checkConnection()}
+              onClearCredentials={handleClearCredentials}
+            />
+          )}
+        </main>
+      </div>
+
+      {/* Floating Toast Notification System */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto p-4 rounded-xl border shadow-2xl flex items-start gap-3 transition-all transform duration-200 animate-slide-up ${
+            className={`pointer-events-auto p-4 rounded-2xl border shadow-lg flex items-start gap-3 bg-white transition-all transform duration-200 animate-slide-up ${
               toast.type === 'success'
-                ? 'bg-zinc-900 border-emerald-500/40 text-emerald-300'
+                ? 'border-emerald-200 text-slate-800'
                 : toast.type === 'error'
-                ? 'bg-zinc-900 border-rose-500/40 text-rose-300'
-                : 'bg-zinc-900 border-blue-500/40 text-blue-300'
+                ? 'border-rose-200 text-slate-800'
+                : 'border-blue-200 text-slate-800'
             }`}
           >
             {toast.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             ) : toast.type === 'error' ? (
-              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
             ) : (
-              <Zap className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+              <Zap className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
             )}
 
             <div className="flex-1">
-              <div className="font-bold text-xs text-white">{toast.title}</div>
-              <div className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{toast.message}</div>
+              <div className="font-bold text-xs text-slate-900">{toast.title}</div>
+              <div className="text-xs text-slate-600 mt-0.5 leading-relaxed">{toast.message}</div>
             </div>
 
             <button
               onClick={() => removeToast(toast.id)}
-              className="text-zinc-500 hover:text-white p-0.5 transition"
+              className="text-slate-400 hover:text-slate-600 p-0.5 transition cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
         ))}
       </div>
-
-      {/* Modals */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        config={config}
-        onSaveConfig={handleSaveConfig}
-      />
-
-      <CodeExportModal
-        isOpen={isCodeExportOpen}
-        onClose={() => setIsCodeExportOpen(false)}
-        config={config}
-        targetPhone={phoneNumber}
-        messageText={messageType === 'text' ? textMessage : caption}
-      />
     </div>
   );
 }
