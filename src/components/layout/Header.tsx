@@ -9,9 +9,12 @@ import {
   Search,
   ExternalLink,
   ShieldCheck,
-  Send
+  Send,
+  HelpCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { ConnectionStateData, WhatsAppConfig } from '../../types/dashboard';
+import { User } from '../../services/authService';
 import { NavTabId } from './Sidebar';
 
 interface HeaderProps {
@@ -22,6 +25,9 @@ interface HeaderProps {
   onRefreshConnection: () => void;
   onOpenConnect: () => void;
   onQuickSend: () => void;
+  currentUser?: User | null;
+  onGoToLanding?: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -32,6 +38,9 @@ export const Header: React.FC<HeaderProps> = ({
   onRefreshConnection,
   onOpenConnect,
   onQuickSend,
+  currentUser,
+  onGoToLanding,
+  onLogout,
 }) => {
   const isConnected = connectionState?.status === 'open';
 
@@ -89,30 +98,52 @@ export const Header: React.FC<HeaderProps> = ({
   const { title, subtitle } = getPageTitle();
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-20 shadow-xs">
-      {/* Title & Subtitle */}
-      <div>
-        <h1 className="text-base font-bold text-slate-900 leading-tight">
-          {title}
-        </h1>
-        <p className="text-xs text-slate-500 font-normal hidden sm:block">
-          {subtitle}
-        </p>
+    <header className="h-16 bg-white border-b border-slate-200/90 px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs font-sans">
+      {/* Left: Search input matching screenshot */}
+      <div className="flex items-center gap-4">
+        <div className="relative w-64 md:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search here..."
+            className="w-full pl-9 pr-4 py-2 bg-slate-50/80 hover:bg-slate-100/70 border border-slate-200/80 rounded-xl text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#84cc16] focus:bg-white transition"
+          />
+        </div>
       </div>
 
       {/* Right Controls */}
       <div className="flex items-center gap-3">
-        {/* Connection status button */}
+        {/* Help & Support */}
+        <button
+          type="button"
+          onClick={onOpenConnect}
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl text-xs font-semibold transition cursor-pointer"
+        >
+          <HelpCircle className="w-4 h-4 text-slate-500" />
+          <span>Help & Support</span>
+        </button>
+
+        {/* Notification Bell with Red Badge */}
+        <button
+          type="button"
+          className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+          title="Notifications"
+        >
+          <Bell className="w-4 h-4 stroke-[2]" />
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
+        </button>
+
+        {/* WhatsApp Connection status pill */}
         <button
           onClick={onOpenConnect}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition ${
             isConnected
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
               : config.baseUrl && config.instance
               ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
               : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
           }`}
-          title="Manage WhatsApp Connection"
+          title="WhatsApp Instance Connection State"
         >
           <span
             className={`w-2 h-2 rounded-full ${
@@ -124,41 +155,28 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           />
           <span className="hidden md:inline">
-            {isConnected
-              ? `Connected: ${config.instance}`
-              : config.instance
-              ? `Connecting (${config.instance})`
-              : 'Connect WhatsApp Instance'}
+            {isConnected ? 'WhatsApp Live' : config.instance ? 'Connecting...' : 'Offline'}
           </span>
-          <span className="md:hidden">{isConnected ? 'Online' : 'Connect'}</span>
         </button>
 
-        {/* Refresh Ping icon */}
-        {config.instance && config.apiKey && (
-          <button
-            onClick={onRefreshConnection}
-            disabled={isCheckingConnection}
-            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition"
-            title="Check live instance ping"
-          >
-            <RefreshCw className={`w-4 h-4 ${isCheckingConnection ? 'animate-spin text-emerald-600' : ''}`} />
-          </button>
-        )}
-
-        {/* Quick Send CTA */}
-        <button
-          onClick={onQuickSend}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm shadow-emerald-600/20 transition cursor-pointer"
-        >
-          <Send className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Send Message</span>
-        </button>
-
-        {/* Profile Avatar */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-          <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center shadow-xs">
-            RS
+        {/* User Profile RS Avatar with down chevron */}
+        <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-200">
+          <div className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-100 transition cursor-pointer">
+            <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center shadow-xs">
+              RS
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </div>
+
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer hidden lg:block"
+              title="Sign Out"
+            >
+              <span className="text-[11px] font-bold">Logout</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

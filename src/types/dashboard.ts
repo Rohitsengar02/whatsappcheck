@@ -8,12 +8,12 @@ export interface WhatsAppConfig {
 }
 
 export const DEFAULT_CONFIG: WhatsAppConfig = {
-  baseUrl: '',
-  instance: '',
-  apiKey: '',
-  connectedNumber: '',
+  baseUrl: 'https://www.bitechez.com',
+  instance: 'user_rjx6ebs',
+  apiKey: '429683C4C977415CAAFCCE10F7D57E11',
+  connectedNumber: '919761304821',
   mediaBucket: '',
-  useProxy: false,
+  useProxy: true,
 };
 
 export type ConnectionStateStatus = 'open' | 'connecting' | 'close' | 'refused' | 'unknown' | 'error';
@@ -167,7 +167,13 @@ export interface ChatMessage {
   sender: 'user' | 'contact';
   text: string;
   timestamp: string;
-  status?: 'sent' | 'delivered' | 'read';
+  status?: 'sent' | 'delivered' | 'read' | 'failed' | 'sending' | 'pending';
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'document' | string;
+  fileName?: string;
+  fileSize?: string;
+  direction?: 'incoming' | 'outgoing';
+  wa_message_id?: string;
 }
 
 export interface InboxConversation {
@@ -176,9 +182,12 @@ export interface InboxConversation {
   phone: string;
   unreadCount: number;
   avatarColor: string;
-  label: 'New Lead' | 'VIP Lead' | 'Urgent' | 'Order Inquiry' | 'Resolved';
+  avatarUrl?: string;
+  label: string;
   lastMessageTime: string;
   messages: ChatMessage[];
+  assignedTo?: string;
+  isStarred?: boolean;
 }
 
 // 7 New Super Features:
@@ -229,6 +238,7 @@ export interface InteractiveButtonItem {
   type: 'reply' | 'url' | 'call';
   label: string;
   payloadOrUrl: string;
+  autoResponse?: string;
 }
 
 export interface InteractiveMenuListSection {

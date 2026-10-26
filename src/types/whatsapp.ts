@@ -8,12 +8,12 @@ export interface WhatsAppConfig {
 }
 
 export const DEFAULT_CONFIG: WhatsAppConfig = {
-  baseUrl: '',
-  instance: '',
-  apiKey: '',
-  connectedNumber: '',
+  baseUrl: 'https://www.bitechez.com',
+  instance: 'user_rjx6ebs',
+  apiKey: '429683C4C977415CAAFCCE10F7D57E11',
+  connectedNumber: '919761304821',
   mediaBucket: '',
-  useProxy: false,
+  useProxy: true,
 };
 
 export type ConnectionStateStatus = 'open' | 'connecting' | 'close' | 'refused' | 'unknown' | 'error';
@@ -60,7 +60,7 @@ export interface ApiLogEntry {
   id: string;
   timestamp: string;
   title: string;
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'DELETE' | 'PUT';
   endpoint: string;
   fullUrl: string;
   requestHeaders: Record<string, string>;

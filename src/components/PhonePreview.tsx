@@ -10,19 +10,34 @@ import {
   Sun,
   Moon,
   Shield,
-  Smartphone
+  Smartphone,
+  ExternalLink,
+  MousePointerClick,
+  Sparkles,
+  Bot
 } from 'lucide-react';
 import { formatPhoneDisplay } from '../services/whatsappService';
 
 interface PhonePreviewProps {
   recipientPhone: string;
   senderPhone: string;
-  messageType: 'text' | 'media';
+  messageType: 'text' | 'media' | 'buttons';
   textMessage: string;
-  mediaType: 'image' | 'video' | 'audio' | 'document';
-  mediaUrl: string;
-  fileName: string;
-  caption: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'document';
+  mediaUrl?: string;
+  fileName?: string;
+  caption?: string;
+  buttonsTitle?: string;
+  buttonsFooter?: string;
+  buttons?: {
+    id: string;
+    label: string;
+    type: 'reply' | 'url' | 'call';
+    payloadOrUrl?: string;
+    autoResponse?: string;
+  }[];
+  onButtonClick?: (btn: any) => void;
+  simulatedReply?: string | null;
 }
 
 export const PhonePreview: React.FC<PhonePreviewProps> = ({
@@ -30,10 +45,15 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   senderPhone,
   messageType,
   textMessage,
-  mediaType,
-  mediaUrl,
-  fileName,
-  caption,
+  mediaType = 'image',
+  mediaUrl = '',
+  fileName = '',
+  caption = '',
+  buttonsTitle = '',
+  buttonsFooter = '',
+  buttons = [],
+  onButtonClick,
+  simulatedReply,
 }) => {
   const [isDarkMode, setIsDarkMode] = useState(true);
 
@@ -49,7 +69,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     const lines = raw.split('\n');
 
     return lines.map((line, lineIdx) => {
-      // Simple regex replacement for bold *text* and italic _text_
       const parts = line.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~)/g);
 
       return (
@@ -88,7 +107,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
         <button
           type="button"
           onClick={() => setIsDarkMode(!isDarkMode)}
-          className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs flex items-center gap-1.5 transition"
+          className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer"
           title="Toggle WhatsApp Dark/Light UI"
         >
           {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-blue-400" />}
@@ -98,53 +117,46 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
       {/* Phone Mockup Frame */}
       <div className="w-full max-w-[340px] rounded-[36px] p-2.5 bg-zinc-950 border-[3px] border-zinc-700 shadow-2xl relative">
-        {/* Dynamic Island / Speaker notch */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-4 bg-zinc-900 rounded-full z-20 flex items-center justify-end pr-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-zinc-950 border border-zinc-800"></div>
+        {/* Dynamic Island / Speaker Notch */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-4 bg-black rounded-full z-20 flex items-center justify-end px-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-blue-900/60"></div>
         </div>
 
-        {/* Inner Phone Screen */}
-        <div
-          className={`w-full rounded-[28px] overflow-hidden flex flex-col h-[490px] ${
-            isDarkMode ? 'bg-[#0b141a]' : 'bg-[#efeae2]'
-          }`}
-        >
-          {/* WhatsApp Header */}
+        {/* Screen Container */}
+        <div className="w-full rounded-[28px] overflow-hidden flex flex-col h-[520px] relative select-none">
+          {/* WhatsApp Chat Header */}
           <div
-            className={`px-3 pt-6 pb-2.5 flex items-center justify-between ${
+            className={`pt-7 pb-2.5 px-3 flex items-center justify-between z-10 transition-colors shadow-sm ${
               isDarkMode ? 'bg-[#202c33] text-white' : 'bg-[#008069] text-white'
-            } shadow-sm z-10`}
+            }`}
           >
             <div className="flex items-center gap-2">
-              <ArrowLeft className="w-4 h-4 opacity-80" />
-              <div className="relative">
-                <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs font-bold text-white shadow">
-                  B
-                </div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 border border-[#202c33] rounded-full"></div>
+              <ArrowLeft className="w-4 h-4 cursor-pointer" />
+              <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center font-bold text-xs text-white uppercase shadow-sm">
+                {(senderPhone || 'WA').slice(0, 2)}
               </div>
               <div className="leading-tight">
                 <div className="text-xs font-semibold flex items-center gap-1">
-                  <span>BiteChez Official</span>
-                  <Shield className="w-2.5 h-2.5 text-emerald-400 fill-emerald-400" />
+                  <span className="truncate max-w-[120px]">{senderPhone || 'BiteChez WhatsApp'}</span>
+                  <Shield className="w-3 h-3 text-emerald-400" />
                 </div>
-                <div className="text-[10px] text-emerald-300 opacity-90">online</div>
+                <div className="text-[10px] opacity-75 font-mono">
+                  {recipientPhone ? formatPhoneDisplay(recipientPhone) : '+91 94118 00280'}
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 opacity-90">
-              <VideoIcon className="w-4 h-4 cursor-pointer" />
-              <Phone className="w-3.5 h-3.5 cursor-pointer" />
-              <MoreVertical className="w-3.5 h-3.5 cursor-pointer" />
+            <div className="flex items-center gap-3 text-white/80">
+              <VideoIcon className="w-4 h-4" />
+              <Phone className="w-3.5 h-3.5" />
+              <MoreVertical className="w-3.5 h-3.5" />
             </div>
           </div>
 
-          {/* Chat Body Wallpaper */}
+          {/* WhatsApp Chat Wallpaper & Bubbles Area */}
           <div
-            className={`flex-1 p-3 overflow-y-auto flex flex-col justify-end relative ${
-              isDarkMode
-                ? 'bg-[#0b141a]'
-                : 'bg-[#efeae2]'
+            className={`flex-1 p-3 overflow-y-auto flex flex-col justify-end transition-colors ${
+              isDarkMode ? 'bg-[#0b141a]' : 'bg-[#efeae2]'
             }`}
             style={{
               backgroundImage: isDarkMode
@@ -169,7 +181,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             {/* Outgoing Message Bubble */}
             <div className="flex justify-end mb-2">
               <div
-                className={`max-w-[85%] rounded-2xl rounded-tr-xs p-2.5 shadow-sm text-xs relative ${
+                className={`max-w-[88%] rounded-2xl rounded-tr-xs p-2.5 shadow-sm text-xs relative ${
                   isDarkMode
                     ? 'bg-[#005c4b] text-[#e9edef]'
                     : 'bg-[#d9fdd3] text-[#111b21]'
@@ -213,7 +225,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                             {fileName || 'Document.pdf'}
                           </div>
                           <div className="text-[9px] opacity-70 mt-0.5">
-                            PDF Document • Cloudflare R2
+                            PDF Document • WhatsApp Cloud
                           </div>
                         </div>
                         <Download className="w-4 h-4 opacity-75 shrink-0" />
@@ -259,6 +271,37 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 )}
 
+                {/* Interactive Buttons View Content */}
+                {messageType === 'buttons' && (
+                  <div className="space-y-1">
+                    {mediaUrl && (
+                      <div className="rounded-xl overflow-hidden mb-1.5 bg-black/20 border border-black/10">
+                        <img
+                          src={mediaUrl}
+                          alt="Product Header"
+                          className="w-full max-h-36 object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
+                    {buttonsTitle && (
+                      <div className={`font-bold text-xs mb-0.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {buttonsTitle}
+                      </div>
+                    )}
+                    <div className="text-[11px] leading-relaxed break-words font-sans">
+                      {renderFormattedText(textMessage)}
+                    </div>
+                    {buttonsFooter && (
+                      <div className="text-[10px] opacity-70 italic mt-0.5">
+                        {buttonsFooter}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Message Timestamp & Checkmarks */}
                 <div className="flex items-center justify-end gap-1 mt-1 text-[9px] opacity-70">
                   <span>{currentTime}</span>
@@ -266,6 +309,54 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Native WhatsApp Button Cards (Stacked Below Bubble matching native WhatsApp UI) */}
+            {messageType === 'buttons' && buttons && buttons.length > 0 && (
+              <div className="flex flex-col items-end mb-2 w-full">
+                <div className="w-[88%] space-y-1.5">
+                  {buttons.map((btn) => (
+                    <button
+                      key={btn.id}
+                      type="button"
+                      onClick={() => onButtonClick && onButtonClick(btn)}
+                      className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5 transition-all active:scale-98 shadow-sm cursor-pointer ${
+                        isDarkMode
+                          ? 'bg-[#202c33] hover:bg-[#2a3942] text-[#53bdeb] border border-[#2f3b43]'
+                          : 'bg-white hover:bg-slate-50 text-[#00a884] border border-slate-200'
+                      }`}
+                      title={btn.autoResponse ? `Click to trigger: "${btn.autoResponse}"` : undefined}
+                    >
+                      <MousePointerClick className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                      <span className="truncate">{btn.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Simulated Incoming Automated Response Bubble */}
+            {simulatedReply && (
+              <div className="flex justify-start mb-2 animate-fadeIn">
+                <div
+                  className={`max-w-[88%] rounded-2xl rounded-tl-xs p-2.5 shadow-sm text-xs relative ${
+                    isDarkMode
+                      ? 'bg-[#202c33] text-[#e9edef]'
+                      : 'bg-white text-[#111b21]'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 mb-1">
+                    <Bot className="w-3 h-3" />
+                    <span>Automated Reply</span>
+                  </div>
+                  <div className="text-[11px] leading-relaxed break-words font-sans">
+                    {renderFormattedText(simulatedReply)}
+                  </div>
+                  <div className="flex items-center justify-end gap-1 mt-1 text-[9px] opacity-70">
+                    <span>{currentTime}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* WhatsApp Bottom Composer Mockup */}

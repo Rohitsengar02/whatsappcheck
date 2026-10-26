@@ -51,7 +51,7 @@ function getRequestUrl(config: WhatsAppConfig, endpointPath: string): { fetchUrl
 }
 
 export function generateCurlCommand(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE' | 'PUT',
   url: string,
   apiKey: string,
   body?: any
@@ -66,7 +66,7 @@ export function generateCurlCommand(
 
 export async function executeWhatsAppRequest<T = any>(
   config: WhatsAppConfig,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE' | 'PUT',
   endpointPath: string,
   body?: any,
   title = 'WhatsApp API Request'
@@ -321,3 +321,338 @@ export async function sendMediaMessage(
     `Send ${params.mediaType.toUpperCase()} to ${cleanPhone}`
   );
 }
+
+/**
+ * Create Instance and return initial QR Code (if generated)
+ * POST /instance/create
+ */
+export async function createInstance(
+  config: WhatsAppConfig,
+  instanceName: string,
+  token?: string
+): Promise<{
+  success: boolean;
+  data?: any;
+  qrcode?: { base64?: string; code?: string; pairingCode?: string };
+  error?: string;
+  log: ApiLogEntry;
+}> {
+  const endpoint = '/instance/create';
+  const body = {
+    instanceName: instanceName.trim(),
+    token: token || config.apiKey,
+    qrcode: true,
+    integration: 'WHATSAPP-BAILEYS',
+  };
+
+  const res = await executeWhatsAppRequest<any>(
+    config,
+    'POST',
+    endpoint,
+    body,
+    `Create Instance (${instanceName})`
+  );
+
+  let qrcode: { base64?: string; code?: string; pairingCode?: string } | undefined;
+  if (res.data?.qrcode) {
+    qrcode = {
+      base64: res.data.qrcode.base64,
+      code: res.data.qrcode.code,
+      pairingCode: res.data.qrcode.pairingCode,
+    };
+  }
+
+  return {
+    success: res.success,
+    data: res.data,
+    qrcode,
+    error: res.error,
+    log: res.log,
+  };
+}
+
+/**
+ * Fetch Live QR Code for Instance:
+ * GET /instance/connect/{instance}
+ */
+export async function fetchInstanceQrCode(
+  config: WhatsAppConfig,
+  instanceName: string
+): Promise<{
+  success: boolean;
+  qrcode?: { base64?: string; code?: string; pairingCode?: string };
+  error?: string;
+  log: ApiLogEntry;
+}> {
+  const endpoint = `/instance/connect/${encodeURIComponent(instanceName.trim())}`;
+  const res = await executeWhatsAppRequest<any>(
+    config,
+    'GET',
+    endpoint,
+    undefined,
+    `Fetch QR Code (${instanceName})`
+  );
+
+  let qrcode: { base64?: string; code?: string; pairingCode?: string } | undefined;
+  if (res.data) {
+    qrcode = {
+      base64: res.data.base64 || res.data.qrcode?.base64,
+      code: res.data.code || res.data.qrcode?.code,
+      pairingCode: res.data.pairingCode || res.data.qrcode?.pairingCode,
+    };
+  }
+
+  return {
+    success: res.success && Boolean(qrcode?.base64 || qrcode?.code),
+    qrcode,
+    error: res.error,
+    log: res.log,
+  };
+}
+
+/**
+ * Restart WhatsApp instance:
+ * POST /instance/restart/{instance}
+ */
+export async function restartInstance(
+  config: WhatsAppConfig,
+  instanceName: string
+): Promise<{ success: boolean; data?: any; error?: string; log: ApiLogEntry }> {
+  const endpoint = `/instance/restart/${encodeURIComponent(instanceName.trim())}`;
+  return executeWhatsAppRequest(config, 'POST', endpoint, undefined, `Restart Instance (${instanceName})`);
+}
+
+/**
+ * Logout WhatsApp session:
+ * DELETE /instance/logout/{instance}
+ */
+export async function logoutInstance(
+  config: WhatsAppConfig,
+  instanceName: string
+): Promise<{ success: boolean; data?: any; error?: string; log: ApiLogEntry }> {
+  const endpoint = `/instance/logout/${encodeURIComponent(instanceName.trim())}`;
+  return executeWhatsAppRequest(config, 'DELETE', endpoint, undefined, `Logout Instance (${instanceName})`);
+}
+
+/**
+ * Delete WhatsApp instance:
+ * DELETE /instance/delete/{instance}
+ */
+export async function deleteInstance(
+  config: WhatsAppConfig,
+  instanceName: string
+): Promise<{ success: boolean; data?: any; error?: string; log: ApiLogEntry }> {
+  const endpoint = `/instance/delete/${encodeURIComponent(instanceName.trim())}`;
+  return executeWhatsAppRequest(config, 'DELETE', endpoint, undefined, `Delete Instance (${instanceName})`);
+}
+
+/**
+ * Send Interactive Buttons Message:
+ * POST /message/sendButtons/{instance}
+ */
+export async function sendButtonsMessage(
+  config: WhatsAppConfig,
+  params: {
+    toPhone: string;
+    title: string;
+    description: string;
+    footer?: string;
+    thumbnailUrl?: string;
+    buttons: {
+      id?: string;
+      displayText: string;
+      type: 'reply' | 'url' | 'call';
+      url?: string;
+      phoneNumber?: string;
+    }[];
+  }
+): Promise<{ success: boolean; data?: any; error?: string; log: ApiLogEntry }> {
+  const cleanPhone = sanitizePhoneNumber(params.toPhone);
+  const effectiveInstance = (config.instance || 'user_rjx6ebs').trim();
+  const endpoint = `/message/sendButtons/${encodeURIComponent(effectiveInstance)}`;
+
+  // Ensure all buttons conform to Evolution API's native button specification
+  // Note: Reply buttons cannot be mixed with URL buttons in WhatsApp native flow
+  const hasReply = params.buttons.some((b) => b.type === 'reply' || !b.type);
+  const formattedButtons = params.buttons.map((b, idx) => {
+    // If reply buttons are present, enforce all as reply to avoid WhatsApp mixing error
+    const resolvedType = hasReply ? 'reply' : (b.type || 'reply');
+    return {
+      type: resolvedType,
+      displayText: b.displayText.trim(),
+      id: b.id || `btn_${Date.now()}_${idx}`,
+      url: resolvedType === 'url' ? b.url : undefined,
+      phoneNumber: resolvedType === 'call' ? b.phoneNumber : undefined,
+    };
+  });
+
+  const body: any = {
+    number: cleanPhone,
+    title: params.title || 'Message',
+    description: params.description || '',
+    footer: params.footer || '',
+    buttons: formattedButtons,
+  };
+
+  if (params.thumbnailUrl && params.thumbnailUrl.trim().length > 0) {
+    body.thumbnailUrl = params.thumbnailUrl.trim();
+  }
+
+  return executeWhatsAppRequest(
+    config,
+    'POST',
+    endpoint,
+    body,
+    `Send Native Buttons Message to ${cleanPhone}`
+  );
+}
+
+/**
+ * Send Interactive Clickable Option Buttons (WhatsApp Poll Cards):
+ * POST /message/sendPoll/{instance}
+ * (100% Guaranteed to be received & clickable across all WhatsApp Mobile & Desktop apps)
+ */
+export async function sendPollMessage(
+  config: WhatsAppConfig,
+  params: {
+    toPhone: string;
+    name: string;
+    options: string[];
+    selectableCount?: number;
+  }
+): Promise<{ success: boolean; data?: any; error?: string; log: ApiLogEntry }> {
+  const cleanPhone = sanitizePhoneNumber(params.toPhone);
+  const effectiveInstance = (config.instance || 'user_rjx6ebs').trim();
+  const endpoint = `/message/sendPoll/${encodeURIComponent(effectiveInstance)}`;
+
+  const validOptions = params.options
+    .map((o) => o?.trim())
+    .filter((o) => Boolean(o && o.length > 0));
+
+  const body = {
+    number: cleanPhone,
+    name: params.name || 'How would you like to proceed?',
+    selectableCount: params.selectableCount || 1,
+    values: validOptions.length > 0 ? validOptions : ['Option 1', 'Option 2'],
+  };
+
+  return executeWhatsAppRequest(
+    config,
+    'POST',
+    endpoint,
+    body,
+    `Send WhatsApp Clickable Buttons (Poll) to ${cleanPhone}`
+  );
+}
+
+/**
+ * Send Interactive List Menu:
+ * POST /message/sendList/{instance}
+ */
+export async function sendListMessage(
+  config: WhatsAppConfig,
+  params: {
+    toPhone: string;
+    title: string;
+    description: string;
+    buttonText: string;
+    footerText?: string;
+    sections: {
+      title: string;
+      rows: {
+        title: string;
+        description?: string;
+        rowId: string;
+      }[];
+    }[];
+  }
+): Promise<{ success: boolean; data?: any; error?: string; log: ApiLogEntry }> {
+  const cleanPhone = sanitizePhoneNumber(params.toPhone);
+  const effectiveInstance = (config.instance || 'user_rjx6ebs').trim();
+  const endpoint = `/message/sendList/${encodeURIComponent(effectiveInstance)}`;
+
+  const body = {
+    number: cleanPhone,
+    title: params.title || 'Options Menu',
+    description: params.description || '',
+    buttonText: params.buttonText || 'View Options',
+    footerText: params.footerText || '',
+    sections: params.sections,
+  };
+
+  return executeWhatsAppRequest(
+    config,
+    'POST',
+    endpoint,
+    body,
+    `Send WhatsApp List Menu to ${cleanPhone}`
+  );
+}
+
+/**
+ * Find/Fetch messages from Evolution API WhatsApp instance:
+ * POST /chat/findMessages/{instance}
+ */
+export async function findMessages(
+  config: WhatsAppConfig,
+  query: { remoteJid?: string; limit?: number } = {}
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const effectiveInstance = (config.instance || 'default').trim();
+  const endpoint = `/chat/findMessages/${encodeURIComponent(effectiveInstance)}`;
+
+  const body: any = {
+    where: {},
+  };
+
+  if (query.remoteJid) {
+    const clean = sanitizePhoneNumber(query.remoteJid) || query.remoteJid.replace(/\D/g, '');
+    const jid = clean.includes('@') ? clean : `${clean}@s.whatsapp.net`;
+    body.where.key = {
+      remoteJid: jid,
+    };
+  }
+
+  if (query.limit) {
+    body.limit = query.limit;
+  }
+
+  const res = await executeWhatsAppRequest(
+    config,
+    'POST',
+    endpoint,
+    body,
+    `Find Messages for ${effectiveInstance}`
+  );
+
+  return {
+    success: res.success,
+    data: res.data,
+    error: res.error,
+  };
+}
+
+/**
+ * Find/Fetch all active WhatsApp chats from Evolution API:
+ * POST /chat/findChats/{instance}
+ */
+export async function findChats(
+  config: WhatsAppConfig
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const effectiveInstance = (config.instance || 'default').trim();
+  const endpoint = `/chat/findChats/${encodeURIComponent(effectiveInstance)}`;
+
+  const res = await executeWhatsAppRequest(
+    config,
+    'POST',
+    endpoint,
+    {},
+    `Find Chats for ${effectiveInstance}`
+  );
+
+  return {
+    success: res.success,
+    data: res.data,
+    error: res.error,
+  };
+}
+

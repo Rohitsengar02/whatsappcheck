@@ -335,49 +335,8 @@ export const INITIAL_POLLS: WhatsAppPoll[] = [
   },
 ];
 
-// 6. Live Inbox Conversations
-export const INITIAL_CONVERSATIONS: InboxConversation[] = [
-  {
-    id: 'inbox-1',
-    contactName: 'Aarav Sharma',
-    phone: '+919876543210',
-    unreadCount: 1,
-    avatarColor: 'bg-emerald-600',
-    label: 'Order Inquiry',
-    lastMessageTime: '10:45 AM',
-    messages: [
-      { id: 'm1', sender: 'contact', text: 'Hi! Can you let me know if my catering order BC-8492 is out for delivery?', timestamp: '10:40 AM' },
-      { id: 'm2', sender: 'user', text: 'Hi Aarav! Yes, our driver Vikram has picked up your banquet order and is 15 minutes away.', timestamp: '10:42 AM', status: 'read' },
-      { id: 'm3', sender: 'contact', text: 'Awesome, thanks for the quick update!', timestamp: '10:45 AM' },
-    ],
-  },
-  {
-    id: 'inbox-2',
-    contactName: 'Priya Verma',
-    phone: '+919812345678',
-    unreadCount: 0,
-    avatarColor: 'bg-purple-600',
-    label: 'VIP Lead',
-    lastMessageTime: 'Yesterday',
-    messages: [
-      { id: 'm4', sender: 'contact', text: 'Could you share the discount code for the annual subscription?', timestamp: 'Yesterday' },
-      { id: 'm5', sender: 'user', text: 'Certainly Priya! Use SENGARVIP20 for 20% off at checkout.', timestamp: 'Yesterday', status: 'read' },
-    ],
-  },
-  {
-    id: 'inbox-3',
-    contactName: 'Michael Davis',
-    phone: '+14155552671',
-    unreadCount: 0,
-    avatarColor: 'bg-blue-600',
-    label: 'New Lead',
-    lastMessageTime: 'Oct 4',
-    messages: [
-      { id: 'm6', sender: 'contact', text: 'Hello, looking for WhatsApp API integration for my e-commerce store.', timestamp: 'Oct 4' },
-      { id: 'm7', sender: 'user', text: 'Hello Michael! We support multi-channel broadcasts, webhooks, and auto-responders. Happy to assist!', timestamp: 'Oct 4', status: 'read' },
-    ],
-  },
-];
+// 6. Live Inbox Conversations (Start empty, populated from real user database contacts & messages)
+export const INITIAL_CONVERSATIONS: InboxConversation[] = [];
 
 // Feature 1: Auto Message Rules
 export const INITIAL_AUTO_MESSAGES: AutoMessageRule[] = [

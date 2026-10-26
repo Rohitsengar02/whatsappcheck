@@ -5,26 +5,22 @@ import {
   Radio,
   Clock,
   Bot,
-  FileText,
-  Users,
-  Settings,
-  Smartphone,
-  CheckCircle2,
-  AlertCircle,
   Sparkles,
-  ChevronRight,
   Zap,
-  ShoppingBag,
-  MessageSquare,
-  Vote,
   RotateCcw,
-  BarChart3,
-  Megaphone,
   MousePointerClick,
   QrCode,
   ShieldCheck,
+  Vote,
+  Users,
+  LifeBuoy,
   Webhook,
-  LifeBuoy
+  ShoppingBag,
+  FileText,
+  BarChart3,
+  Settings,
+  MessageSquare,
+  MoreVertical,
 } from 'lucide-react';
 import { ConnectionStateData, WhatsAppConfig } from '../../types/dashboard';
 
@@ -60,6 +56,16 @@ interface SidebarProps {
   onOpenConnect: () => void;
 }
 
+interface NavSection {
+  title: string;
+  items: {
+    id: NavTabId;
+    label: string;
+    icon: React.ReactNode;
+    badge?: string;
+  }[];
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   setActiveTab,
@@ -68,95 +74,184 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenConnect,
 }) => {
   const isConnected = connectionState?.status === 'open';
-  const isConfigured = Boolean(config.baseUrl && config.instance && config.apiKey);
 
-  const sections = [
+  // All 22 pages organized into clean, comprehensive sections
+  const sections: NavSection[] = [
     {
       title: 'Messaging & Live Inbox',
       items: [
-        { id: 'overview' as NavTabId, label: 'Overview & KPIs', icon: <LayoutDashboard className="w-4 h-4" /> },
-        { id: 'sender' as NavTabId, label: 'Direct Sender', icon: <Send className="w-4 h-4" />, badge: 'Live' },
-        { id: 'live_inbox' as NavTabId, label: 'Live Team Inbox', icon: <MessageSquare className="w-4 h-4" />, badge: 'Chat' },
-        { id: 'broadcast' as NavTabId, label: 'Bulk Broadcast', icon: <Radio className="w-4 h-4" />, badge: 'Anti-Ban' },
-        { id: 'scheduled' as NavTabId, label: 'Scheduled & Loops', icon: <Clock className="w-4 h-4" /> },
+        {
+          id: 'overview',
+          label: 'Dashboard',
+          icon: <LayoutDashboard className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'sender',
+          label: 'Send Message',
+          icon: <Send className="w-4 h-4 stroke-[1.9]" />,
+          badge: 'Live',
+        },
+        {
+          id: 'live_inbox',
+          label: 'Live Team Inbox',
+          icon: <MessageSquare className="w-4 h-4 stroke-[1.9]" />,
+          badge: 'Chat',
+        },
+        {
+          id: 'broadcast',
+          label: 'Bulk Broadcast',
+          icon: <Radio className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'scheduled',
+          label: 'Scheduled Messages',
+          icon: <Clock className="w-4 h-4 stroke-[1.9]" />,
+        },
       ],
     },
     {
-      title: 'Auto Messages & Smart Bots',
+      title: 'Auto Messages & Bots',
       items: [
-        { id: 'auto_responder' as NavTabId, label: 'Auto Message Studio', icon: <Bot className="w-4 h-4" />, badge: 'Hot' },
-        { id: 'ai_copilot' as NavTabId, label: 'AI Copilot & Anti-Ban', icon: <Sparkles className="w-4 h-4" />, badge: 'AI' },
-        { id: 'drip_sequences' as NavTabId, label: 'Drip Sequences', icon: <Zap className="w-4 h-4" />, badge: 'Auto' },
-        { id: 'automations' as NavTabId, label: 'Keyword Automations', icon: <Bot className="w-4 h-4" /> },
-        { id: 'cart_recovery' as NavTabId, label: 'Abandoned Cart Recovery', icon: <RotateCcw className="w-4 h-4" />, badge: 'ROI' },
+        {
+          id: 'auto_responder',
+          label: 'Auto Message Studio',
+          icon: <Bot className="w-4 h-4 stroke-[1.9]" />,
+          badge: 'Hot',
+        },
+        {
+          id: 'ai_copilot',
+          label: 'AI Smart Copilot',
+          icon: <Sparkles className="w-4 h-4 stroke-[1.9]" />,
+          badge: 'AI',
+        },
+        {
+          id: 'drip_sequences',
+          label: 'Drip Sequences',
+          icon: <Zap className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'automations',
+          label: 'Smart Automations',
+          icon: <Bot className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'cart_recovery',
+          label: 'Cart Recovery',
+          icon: <RotateCcw className="w-4 h-4 stroke-[1.9]" />,
+          badge: 'ROI',
+        },
       ],
     },
     {
-      title: 'Engagement & Interactive Tools',
+      title: 'Interactive & Growth Tools',
       items: [
-        { id: 'interactive_buttons' as NavTabId, label: 'Interactive CTA Buttons', icon: <MousePointerClick className="w-4 h-4" />, badge: 'New' },
-        { id: 'qr_generator' as NavTabId, label: 'QR Codes & Click-to-Chat', icon: <QrCode className="w-4 h-4" />, badge: 'Web' },
-        { id: 'number_validator' as NavTabId, label: 'Number Cleanser & Check', icon: <ShieldCheck className="w-4 h-4" />, badge: 'Clean' },
-        { id: 'polls_surveys' as NavTabId, label: 'Polls & Live Surveys', icon: <Vote className="w-4 h-4" /> },
-        { id: 'groups_manager' as NavTabId, label: 'Groups & Community', icon: <Users className="w-4 h-4" /> },
+        {
+          id: 'interactive_buttons',
+          label: 'Interactive Buttons',
+          icon: <MousePointerClick className="w-4 h-4 stroke-[1.9]" />,
+          badge: 'New',
+        },
+        {
+          id: 'qr_generator',
+          label: 'QR Code Generator',
+          icon: <QrCode className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'number_validator',
+          label: 'Number Validator',
+          icon: <ShieldCheck className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'polls_surveys',
+          label: 'Polls & Surveys',
+          icon: <Vote className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'groups_manager',
+          label: 'Groups Manager',
+          icon: <Users className="w-4 h-4 stroke-[1.9]" />,
+        },
       ],
     },
     {
-      title: 'Operations, CRM & Settings',
+      title: 'Audience, CRM & Setup',
       items: [
-        { id: 'support_tickets' as NavTabId, label: 'Support Tickets & SLA', icon: <LifeBuoy className="w-4 h-4" />, badge: 'SLA' },
-        { id: 'webhooks_manager' as NavTabId, label: 'Webhooks Live Stream', icon: <Webhook className="w-4 h-4" />, badge: 'API' },
-        { id: 'catalog_payments' as NavTabId, label: 'Catalog & Invoicing', icon: <ShoppingBag className="w-4 h-4" /> },
-        { id: 'templates' as NavTabId, label: 'Message Templates', icon: <FileText className="w-4 h-4" /> },
-        { id: 'contacts' as NavTabId, label: 'Contacts Directory', icon: <Users className="w-4 h-4" /> },
-        { id: 'analytics_reports' as NavTabId, label: 'Analytics & Heatmap', icon: <BarChart3 className="w-4 h-4" />, badge: 'Pro' },
-        { id: 'settings' as NavTabId, label: 'WhatsApp Channel Setup', icon: <Settings className="w-4 h-4" />, badge: isConnected ? 'Online' : 'Setup' },
+        {
+          id: 'contacts',
+          label: 'Contacts Directory',
+          icon: <Users className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'templates',
+          label: 'Message Templates',
+          icon: <FileText className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'catalog_payments',
+          label: 'Catalog & Payments',
+          icon: <ShoppingBag className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'support_tickets',
+          label: 'Support Tickets',
+          icon: <LifeBuoy className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'webhooks_manager',
+          label: 'Webhooks Manager',
+          icon: <Webhook className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'analytics_reports',
+          label: 'Analytics & Heatmap',
+          icon: <BarChart3 className="w-4 h-4 stroke-[1.9]" />,
+        },
+        {
+          id: 'settings',
+          label: 'WhatsApp Setup',
+          icon: <Settings className="w-4 h-4 stroke-[1.9]" />,
+          badge: isConnected ? 'Online' : 'Setup',
+        },
       ],
     },
   ];
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 h-screen sticky top-0 z-30 select-none shadow-xs">
-      {/* Brand Header */}
-      <div className="h-16 border-b border-slate-100 flex items-center px-5 gap-3 shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
-          <Smartphone className="w-5 h-5" />
+    <aside className="w-64 bg-white border-r border-slate-200/90 flex flex-col justify-between shrink-0 h-screen sticky top-0 z-30 select-none shadow-xs font-sans">
+      {/* 1. CyberLim Brand Header */}
+      <div className="h-20 flex flex-col justify-center px-6 shrink-0 border-b border-slate-100">
+        <div className="flex items-center gap-1">
+          <span className="font-extrabold text-slate-900 text-2xl tracking-tight">Cyber</span>
+          <span className="font-extrabold text-[#84cc16] text-2xl tracking-tight flex items-center">
+            Lim
+            <span className="w-1.5 h-1.5 rounded-full bg-[#84cc16] ml-0.5 inline-block" />
+          </span>
         </div>
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="font-extrabold text-slate-900 text-sm tracking-tight">
-              Sengar
-            </span>
-            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-              Hub
-            </span>
-          </div>
-          <p className="text-[10px] text-slate-400 font-medium">WhatsApp Business Suite</p>
-        </div>
+        <p className="text-[11px] text-slate-400 font-medium tracking-tight mt-0.5">WhatsApp Messaging Suite</p>
       </div>
 
-      {/* Navigation Sections */}
-      <div className="p-3 space-y-4 overflow-y-auto flex-1 scrollbar-none">
-        {sections.map((sec, secIdx) => (
+      {/* 2. All 22 Navigation Buttons with CyberLim active pill & hover effect */}
+      <div className="p-3 space-y-4 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+        {sections.map((section, secIdx) => (
           <div key={secIdx} className="space-y-1">
             <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              {sec.title}
+              {section.title}
             </div>
 
-            {sec.items.map((item) => {
+            {section.items.map((item) => {
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all duration-150 cursor-pointer ${
                     isActive
-                      ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200/60 font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      ? 'bg-[#ecfccb] text-[#3f6212] font-bold shadow-xs border border-[#d9f99d]'
+                      : 'text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 truncate">
-                    <span className={isActive ? 'text-emerald-600' : 'text-slate-400'}>
+                    <span className={isActive ? 'text-[#65a30d]' : 'text-slate-400'}>
                       {item.icon}
                     </span>
                     <span className="truncate">{item.label}</span>
@@ -164,9 +259,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   {item.badge && (
                     <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded font-bold shrink-0 ml-1 ${
+                      className={`text-[9.5px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                         isActive
-                          ? 'bg-emerald-200/80 text-emerald-900'
+                          ? 'bg-[#84cc16] text-white'
+                          : item.badge === 'Online'
+                          ? 'bg-emerald-100 text-emerald-800'
                           : 'bg-slate-100 text-slate-500'
                       }`}
                     >
@@ -180,38 +277,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ))}
       </div>
 
-      {/* Bottom Instance Connection Status Card */}
-      <div className="p-3 border-t border-slate-100 bg-slate-50/70 shrink-0">
-        <div
-          onClick={onOpenConnect}
-          className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs cursor-pointer hover:border-emerald-300 transition group"
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isConnected
-                    ? 'bg-emerald-500 animate-pulse'
-                    : isConfigured
-                    ? 'bg-amber-400'
-                    : 'bg-slate-300'
-                }`}
-              />
-              Instance Status
-            </span>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition" />
+      {/* 3. Bottom Free Plan & Profile Widget */}
+      <div className="p-4 space-y-3.5 border-t border-slate-100 bg-white shrink-0">
+        {/* Free Plan Progress Card */}
+        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800">Free Plan</span>
+            <button
+              type="button"
+              onClick={onOpenConnect}
+              className="px-2.5 py-0.5 bg-[#84cc16] hover:bg-[#65a30d] text-white text-[11px] font-bold rounded-lg transition shadow-xs cursor-pointer"
+            >
+              Upgrade
+            </button>
           </div>
 
-          <div className="text-xs font-bold text-slate-900 truncate">
-            {config.instance || 'Not Connected'}
+          <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+            <div className="bg-[#84cc16] h-1.5 rounded-full w-[45%]" />
           </div>
 
-          <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between">
-            <span>{isConnected ? 'Active & Ready' : isConfigured ? 'Pairing...' : 'Click to connect'}</span>
-            <span className={`font-semibold ${isConnected ? 'text-emerald-600' : 'text-slate-400'}`}>
-              {isConnected ? 'ONLINE' : 'OFFLINE'}
-            </span>
+          <div className="flex items-center justify-between text-[10.5px] text-slate-500 font-medium">
+            <span>450 / 1,000 messages</span>
+            <span className="text-slate-400 font-mono text-[9.5px]">45%</span>
           </div>
+        </div>
+
+        {/* User Profile Card */}
+        <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+              RS
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-900 truncate">Rohit Sengar</div>
+              <div className="text-[11px] text-slate-400 truncate">rohit@cyberlim.com</div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenConnect}
+            className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer"
+            title="Options"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </aside>

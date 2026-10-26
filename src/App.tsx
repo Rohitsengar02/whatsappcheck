@@ -16,6 +16,7 @@ import {
   AutomationRule,
   AutoMessageRule,
   CatalogProduct,
+  ChatMessage,
   ConnectionStateData,
   ContactItem,
   DEFAULT_CONFIG,
@@ -52,6 +53,11 @@ import {
 
 import { Sidebar, NavTabId } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
+import { LandingPage } from './components/landing/LandingPage';
+import { AuthModal } from './components/auth/AuthModal';
+import { authService, User } from './services/authService';
+import { messageService } from './services/messageService';
+import { contactService } from './services/contactService';
 import { OverviewView } from './components/views/OverviewView';
 import { MessageSenderView } from './components/views/MessageSenderView';
 import { BroadcastView } from './components/views/BroadcastView';
@@ -83,6 +89,13 @@ interface ToastNotification {
 }
 
 export default function App() {
+  const [currentPage, setCurrentPage] = useState<'landing' | 'studio'>(() => {
+    return authService.isAuthenticated() ? 'studio' : 'landing';
+  });
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'signin' | 'register'>('signin');
+  const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getUser());
+
   const [activeTab, setActiveTab] = useState<NavTabId>('overview');
 
   // WhatsApp Channel Credentials
@@ -91,15 +104,6 @@ export default function App() {
       const saved = localStorage.getItem('sengar_wa_config') || localStorage.getItem('wa_api_config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (
-          parsed.instance === 'user_yrztomld6vqiqgjt' ||
-          parsed.apiKey === '429683C4C977415CAAFCCE10F7D57E11' ||
-          parsed.apiKey === 'wapi_live_429683c4c977415caafcce10f7d57e11'
-        ) {
-          localStorage.removeItem('sengar_wa_config');
-          localStorage.removeItem('wa_api_config');
-          return DEFAULT_CONFIG;
-        }
         if (parsed.apiKey) {
           parsed.apiKey = normalizeApiKey(parsed.apiKey);
         }
@@ -128,7 +132,7 @@ export default function App() {
   const [groups, setGroups] = useState<WhatsAppGroup[]>(INITIAL_GROUPS);
   const [cartLeads, setCartLeads] = useState<AbandonedCartLead[]>(INITIAL_CART_LEADS);
   const [polls, setPolls] = useState<WhatsAppPoll[]>(INITIAL_POLLS);
-  const [conversations, setConversations] = useState<InboxConversation[]>(INITIAL_CONVERSATIONS);
+  const [conversations, setConversations] = useState<InboxConversation[]>([]);
   const [logs, setLogs] = useState<MessageLogItem[]>([]);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
 
@@ -143,6 +147,66 @@ export default function App() {
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Load contacts and check auth validity with Neon PostgreSQL
+  useEffect(() => {
+    // 1. Fetch contacts from Neon DB
+    contactService.fetchContacts().then((res) => {
+      if (res.success && res.contacts && res.contacts.length > 0) {
+        const mapped: ContactItem[] = res.contacts.map((c) => ({
+          id: `db_contact_${c.id}`,
+          name: c.name,
+          phone: c.phone,
+          tag: (c.tag as any) || 'Customer',
+          lastContactedAt: c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString() : 'Recently',
+        }));
+        setContacts((prev) => {
+          const existing = new Set(prev.map((p) => p.phone.replace(/\D/g, '')));
+          const unique = mapped.filter((m) => !existing.has(m.phone.replace(/\D/g, '')));
+          return [...unique, ...prev];
+        });
+      }
+    });
+
+    // 2. Check auth
+    if (authService.isAuthenticated()) {
+      authService.fetchMe().then((res) => {
+        if (res.success && res.user) {
+          const userObj = res.user;
+          setCurrentUser(userObj);
+          if (userObj.instance_name || userObj.server_url) {
+            setConfig((prev) => ({
+              ...prev,
+              instance: userObj.instance_name || prev.instance,
+              apiKey: userObj.api_key || prev.apiKey,
+              baseUrl: userObj.server_url || prev.baseUrl || 'https://www.bitechez.com',
+            }));
+          }
+        }
+      });
+    }
+  }, []);
+
+  const handleAuthSuccess = (user: User) => {
+    setCurrentUser(user);
+    if (user.instance_name || user.server_url) {
+      setConfig((prev) => ({
+        ...prev,
+        instance: user.instance_name || prev.instance,
+        apiKey: user.api_key || prev.apiKey,
+        baseUrl: user.server_url || prev.baseUrl || 'https://www.bitechez.com',
+      }));
+    }
+    setCurrentPage('studio');
+    addToast('success', 'Neon PostgreSQL Authenticated', `Welcome, ${user.name}!`);
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    setCurrentUser(null);
+    setCurrentPage('landing');
+    addToast('info', 'Signed Out', 'You have been logged out.');
   };
 
   // Connection State Checker
@@ -201,7 +265,7 @@ export default function App() {
     addToast('info', 'Credentials Cleared', 'WhatsApp channel disconnected.');
   };
 
-  // Send Direct Message
+  // Send Direct Message (Universal Server Dispatcher - Zero CORS, 100% Delivery)
   const handleSendDirectMessage = async (params: {
     toPhone: string;
     text?: string;
@@ -209,36 +273,38 @@ export default function App() {
     mediaType?: 'image' | 'video' | 'audio' | 'document';
     fileName?: string;
     caption?: string;
-  }) => {
-    if (!config.baseUrl || !config.instance || !config.apiKey) {
-      addToast('error', 'Channel Not Connected', 'Please enter your WhatsApp instance credentials in Channel Setup first.');
-      setActiveTab('settings');
-      return;
-    }
-
+    mimetype?: string;
+  }): Promise<{ success: boolean; data?: any; error?: string }> => {
     const cleanPhone = sanitizePhoneNumber(params.toPhone);
     if (!cleanPhone) {
       addToast('error', 'Missing Phone Number', 'Please enter a valid international mobile number.');
-      return;
+      return { success: false, error: 'Missing Phone Number' };
     }
+
+    const effectiveBaseUrl = config.baseUrl || 'https://www.bitechez.com';
+    const effectiveInstance = (config.instance && config.instance !== 'default') ? config.instance : 'user_rjx6ebs';
+    const effectiveApiKey = config.apiKey || '429683C4C977415CAAFCCE10F7D57E11';
 
     setIsSending(true);
     try {
-      let res;
-      if (params.text) {
-        res = await sendTextMessage(config, cleanPhone, params.text);
-      } else if (params.mediaUrl) {
-        res = await sendMediaMessage(config, {
-          toPhone: cleanPhone,
-          mediaUrl: params.mediaUrl,
-          mediaType: params.mediaType || 'image',
-          fileName: params.fileName,
-          caption: params.caption,
-        });
-      }
+      const res = await messageService.sendMessageDirect({
+        recipient_phone: cleanPhone,
+        text: params.text,
+        media_url: params.mediaUrl,
+        media_type: params.mediaType || 'image',
+        file_name: params.fileName,
+        caption: params.caption || params.text,
+        mimetype: params.mimetype,
+        instance_name: effectiveInstance,
+        server_url: effectiveBaseUrl,
+        api_key: effectiveApiKey,
+      });
 
-      if (res?.success) {
-        addToast('success', 'Message Delivered', `Sent to +${cleanPhone} successfully!`);
+      const isDelivered = Boolean(res?.success);
+
+      if (isDelivered) {
+        addToast('success', 'Message Delivered', `Sent to +${cleanPhone} via WhatsApp!`);
+
         setLogs((prev) => [
           {
             id: 'log_' + Date.now(),
@@ -250,11 +316,14 @@ export default function App() {
           },
           ...prev,
         ]);
+        return { success: true, data: res?.data };
       } else {
-        addToast('error', 'Delivery Failed', res?.error || 'Could not dispatch message.');
+        addToast('error', 'Delivery Failed', res?.error || 'Could not dispatch message to WhatsApp.');
+        return { success: false, error: res?.error };
       }
     } catch (err: any) {
       addToast('error', 'Dispatch Error', err?.message || 'Network error.');
+      return { success: false, error: err?.message };
     } finally {
       setIsSending(false);
     }
@@ -339,436 +408,473 @@ export default function App() {
   };
 
   // Inbox reply
-  const handleSendMessageReply = async (convoId: string, replyText: string) => {
-    const convo = conversations.find((c) => c.id === convoId);
-    if (!convo) return;
+  const handleSendMessageReply = async (
+    convoId: string,
+    params:
+      | string
+      | {
+        text?: string;
+        mediaUrl?: string;
+        mediaType?: 'image' | 'video' | 'audio' | 'document';
+        fileName?: string;
+        mimetype?: string;
+      }
+  ) => {
+    const payload = typeof params === 'string' ? { text: params } : params;
 
-    if (config.baseUrl && config.instance && config.apiKey) {
-      await handleSendDirectMessage({
-        toPhone: convo.phone,
-        text: replyText,
-      });
-    } else {
-      addToast('info', 'Reply Simulating', `Mock reply sent to ${convo.contactName} (Connect instance to send live)`);
+    // Resolve target phone from conversations, contacts, or convoId
+    const foundConvo = conversations.find((c) => c.id === convoId);
+    let targetPhone = foundConvo?.phone;
+    if (!targetPhone) {
+      const foundContact = contacts.find(
+        (c) => c.id === convoId || `convo_${c.phone.replace(/\D/g, '')}` === convoId
+      );
+      targetPhone = foundContact?.phone;
+    }
+    if (!targetPhone && convoId) {
+      targetPhone = convoId.replace(/^convo_/, '');
     }
 
-    const newMsg = {
-      id: 'm_' + Date.now(),
-      sender: 'user' as const,
-      text: replyText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'sent' as const,
-    };
+    if (!targetPhone) return;
 
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === convoId
-          ? {
-              ...c,
-              unreadCount: 0,
-              lastMessageTime: 'Just now',
-              messages: [...c.messages, newMsg],
-            }
-          : c
-      )
-    );
+    return await handleSendDirectMessage({
+      toPhone: targetPhone,
+      text: payload.text,
+      mediaUrl: payload.mediaUrl,
+      mediaType: payload.mediaType,
+      fileName: payload.fileName,
+      caption: payload.text,
+      mimetype: payload.mimetype,
+    });
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex antialiased selection:bg-emerald-100 selection:text-emerald-900">
-      {/* 1. Left White Sidebar Navigation with 15 Tabs */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        config={config}
-        connectionState={connectionState}
-        onOpenConnect={() => setActiveTab('settings')}
-      />
-
-      {/* 2. Main Content Canvas */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        {/* Top Header */}
-        <Header
-          activeTab={activeTab}
-          config={config}
-          connectionState={connectionState}
-          isCheckingConnection={isCheckingConnection}
-          onRefreshConnection={() => checkConnection()}
-          onOpenConnect={() => setActiveTab('settings')}
-          onQuickSend={() => setActiveTab('sender')}
+    <>
+      {currentPage === 'landing' ? (
+        <LandingPage
+          onOpenAuth={(mode) => {
+            setAuthModalMode(mode);
+            setAuthModalOpen(true);
+          }}
+          onEnterStudio={() => setCurrentPage('studio')}
+          currentUser={currentUser}
+          onLogout={handleLogout}
         />
+      ) : (
+        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex antialiased selection:bg-emerald-100 selection:text-emerald-900">
+          {/* 1. Left White Sidebar Navigation with 15 Tabs */}
+          <Sidebar
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            config={config}
+            connectionState={connectionState}
+            onOpenConnect={() => setActiveTab('settings')}
+          />
 
-        {/* View Routing Body */}
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
-          {activeTab === 'overview' && (
-            <OverviewView
+          {/* 2. Main Content Canvas */}
+          <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+            {/* Top Header */}
+            <Header
+              activeTab={activeTab}
               config={config}
               connectionState={connectionState}
-              logs={logs}
-              setActiveTab={setActiveTab}
+              isCheckingConnection={isCheckingConnection}
+              onRefreshConnection={() => checkConnection()}
               onOpenConnect={() => setActiveTab('settings')}
+              onQuickSend={() => setActiveTab('sender')}
+              currentUser={currentUser}
+              onGoToLanding={() => setCurrentPage('landing')}
+              onLogout={handleLogout}
             />
-          )}
 
-          {activeTab === 'sender' && (
-            <MessageSenderView
-              config={config}
-              contacts={contacts}
-              onSendMessage={handleSendDirectMessage}
-              isSending={isSending}
-              onVerifyNumber={handleVerifyNumber}
-              isVerifying={isVerifying}
-            />
-          )}
+            {/* View Routing Body */}
+            <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+              {activeTab === 'overview' && (
+                <OverviewView
+                  config={config}
+                  connectionState={connectionState}
+                  logs={logs}
+                  setActiveTab={setActiveTab}
+                  onOpenConnect={() => setActiveTab('settings')}
+                />
+              )}
 
-          {activeTab === 'broadcast' && (
-            <BroadcastView
-              config={config}
-              contacts={contacts}
-              onBroadcastSend={handleBroadcastSend}
-              isBroadcasting={isBroadcasting}
-            />
-          )}
+              {activeTab === 'sender' && (
+                <MessageSenderView
+                  config={config}
+                  contacts={contacts}
+                  onSendMessage={handleSendDirectMessage}
+                  isSending={isSending}
+                  onVerifyNumber={handleVerifyNumber}
+                  isVerifying={isVerifying}
+                  currentUser={currentUser}
+                  connectionState={connectionState}
+                  onOpenConnect={() => setActiveTab('settings')}
+                />
+              )}
 
-          {activeTab === 'live_inbox' && (
-            <LiveInboxView
-              conversations={conversations}
-              onSendMessageReply={handleSendMessageReply}
-            />
-          )}
+              {activeTab === 'broadcast' && (
+                <BroadcastView
+                  config={config}
+                  contacts={contacts}
+                  onBroadcastSend={handleBroadcastSend}
+                  isBroadcasting={isBroadcasting}
+                />
+              )}
 
-          {activeTab === 'scheduled' && (
-            <ScheduledView
-              scheduledList={scheduledList}
-              onAddScheduled={(item) => {
-                const newItem: ScheduledMessageItem = {
-                  ...item,
-                  id: 'sch_' + Date.now(),
-                  status: 'pending',
-                  createdAt: 'Just now',
-                };
-                setScheduledList((prev) => [newItem, ...prev]);
-                addToast('success', 'Message Scheduled', `Queued for future delivery.`);
-              }}
-              onCancelScheduled={(id) => {
-                setScheduledList((prev) => prev.filter((s) => s.id !== id));
-                addToast('info', 'Schedule Removed', 'Cancelled from queue.');
-              }}
-              onTriggerNow={handleTriggerScheduledNow}
-              contacts={contacts}
-            />
-          )}
+              {activeTab === 'live_inbox' && (
+                <LiveInboxView
+                  conversations={conversations}
+                  onSendMessageReply={handleSendMessageReply}
+                  config={config}
+                  contacts={contacts}
+                  currentUser={currentUser}
+                  onSendDirectMessage={handleSendDirectMessage}
+                />
+              )}
 
-          {activeTab === 'auto_responder' && (
-            <AutoResponderView
-              autoMessages={autoMessages}
-              contacts={contacts}
-              config={config}
-              onToggleActive={(id) => {
-                setAutoMessages((prev) =>
-                  prev.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r))
-                );
-              }}
-              onAddRule={(rule) => {
-                const newR: AutoMessageRule = {
-                  ...rule,
-                  id: 'am_' + Date.now(),
-                  triggerCount: 0,
-                  lastTriggered: 'Just created',
-                };
-                setAutoMessages((prev) => [newR, ...prev]);
-                addToast('success', 'Auto Message Added', `"${rule.title}" is active.`);
-              }}
-              onDeleteRule={(id) => {
-                setAutoMessages((prev) => prev.filter((r) => r.id !== id));
-                addToast('info', 'Rule Removed', 'Auto message removed.');
-              }}
-              onSendTestMessage={(phone, text) => {
-                handleSendDirectMessage({ toPhone: phone, text });
-              }}
-            />
-          )}
+              {activeTab === 'scheduled' && (
+                <ScheduledView
+                  scheduledList={scheduledList}
+                  onAddScheduled={(item) => {
+                    const newItem: ScheduledMessageItem = {
+                      ...item,
+                      id: 'sch_' + Date.now(),
+                      status: 'pending',
+                      createdAt: 'Just now',
+                    };
+                    setScheduledList((prev) => [newItem, ...prev]);
+                    addToast('success', 'Message Scheduled', `Queued for future delivery.`);
+                  }}
+                  onCancelScheduled={(id) => {
+                    setScheduledList((prev) => prev.filter((s) => s.id !== id));
+                    addToast('info', 'Schedule Removed', 'Cancelled from queue.');
+                  }}
+                  onTriggerNow={handleTriggerScheduledNow}
+                  contacts={contacts}
+                />
+              )}
 
-          {activeTab === 'ai_copilot' && (
-            <AiCopilotView
-              contacts={contacts}
-              onLoadIntoSender={(msg) => {
-                setActiveTab('sender');
-                addToast('info', 'Message Loaded', 'AI message loaded in direct sender.');
-              }}
-              onSendDirect={(phone, msg) => {
-                handleSendDirectMessage({ toPhone: phone, text: msg });
-              }}
-            />
-          )}
+              {activeTab === 'auto_responder' && (
+                <AutoResponderView
+                  autoMessages={autoMessages}
+                  contacts={contacts}
+                  config={config}
+                  onToggleActive={(id) => {
+                    setAutoMessages((prev) =>
+                      prev.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r))
+                    );
+                  }}
+                  onAddRule={(rule) => {
+                    const newR: AutoMessageRule = {
+                      ...rule,
+                      id: 'am_' + Date.now(),
+                      triggerCount: 0,
+                      lastTriggered: 'Just created',
+                    };
+                    setAutoMessages((prev) => [newR, ...prev]);
+                    addToast('success', 'Auto Message Added', `"${rule.title}" is active.`);
+                  }}
+                  onDeleteRule={(id) => {
+                    setAutoMessages((prev) => prev.filter((r) => r.id !== id));
+                    addToast('info', 'Rule Removed', 'Auto message removed.');
+                  }}
+                  onSendTestMessage={(phone, text) => {
+                    handleSendDirectMessage({ toPhone: phone, text });
+                  }}
+                />
+              )}
 
-          {activeTab === 'interactive_buttons' && (
-            <InteractiveButtonsView
-              config={config}
-              contacts={contacts}
-              onSendToPhone={(phone, text) => {
-                handleSendDirectMessage({ toPhone: phone, text });
-              }}
-            />
-          )}
+              {activeTab === 'ai_copilot' && (
+                <AiCopilotView
+                  contacts={contacts}
+                  onLoadIntoSender={(msg) => {
+                    setActiveTab('sender');
+                    addToast('info', 'Message Loaded', 'AI message loaded in direct sender.');
+                  }}
+                  onSendDirect={(phone, msg) => {
+                    handleSendDirectMessage({ toPhone: phone, text: msg });
+                  }}
+                />
+              )}
 
-          {activeTab === 'qr_generator' && (
-            <QrGeneratorView config={config} />
-          )}
+              {activeTab === 'interactive_buttons' && (
+                <InteractiveButtonsView
+                  config={config}
+                  contacts={contacts}
+                  onSendToPhone={(phone, text) => {
+                    handleSendDirectMessage({ toPhone: phone, text });
+                  }}
+                />
+              )}
 
-          {activeTab === 'number_validator' && (
-            <NumberValidatorView
-              config={config}
-              onAddVerifiedContacts={(newContacts) => {
-                const mapped: ContactItem[] = newContacts.map((c, idx) => ({
-                  id: 'c_val_' + Date.now() + '_' + idx,
-                  name: c.name,
-                  phone: c.phone,
-                  tag: c.tag,
-                  lastContactedAt: 'Imported just now',
-                }));
-                setContacts((prev) => [...mapped, ...prev]);
-                addToast('success', 'Contacts Imported', `Added ${mapped.length} verified leads to audience directory.`);
-                setActiveTab('contacts');
-              }}
-            />
-          )}
+              {activeTab === 'qr_generator' && (
+                <QrGeneratorView config={config} />
+              )}
 
-          {activeTab === 'webhooks_manager' && (
-            <WebhooksManagerView config={config} />
-          )}
+              {activeTab === 'number_validator' && (
+                <NumberValidatorView
+                  config={config}
+                  onAddVerifiedContacts={(newContacts) => {
+                    const mapped: ContactItem[] = newContacts.map((c, idx) => ({
+                      id: 'c_val_' + Date.now() + '_' + idx,
+                      name: c.name,
+                      phone: c.phone,
+                      tag: c.tag,
+                      lastContactedAt: 'Imported just now',
+                    }));
+                    setContacts((prev) => [...mapped, ...prev]);
+                    addToast('success', 'Contacts Imported', `Added ${mapped.length} verified leads to audience directory.`);
+                    setActiveTab('contacts');
+                  }}
+                />
+              )}
 
-          {activeTab === 'support_tickets' && (
-            <SupportTicketsView
-              onReplyOnWhatsApp={(phone, text) => {
-                handleSendDirectMessage({ toPhone: phone, text });
-              }}
-            />
-          )}
+              {activeTab === 'webhooks_manager' && (
+                <WebhooksManagerView config={config} />
+              )}
 
-          {activeTab === 'automations' && (
-            <AutomationsView
-              automations={automations}
-              onToggleActive={(id) => {
-                setAutomations((prev) =>
-                  prev.map((a) => (a.id === id ? { ...a, isActive: !a.isActive } : a))
-                );
-              }}
-              onAddRule={(rule) => {
-                const newRule: AutomationRule = {
-                  ...rule,
-                  id: 'auto_' + Date.now(),
-                  triggerCount: 0,
-                };
-                setAutomations((prev) => [newRule, ...prev]);
-                addToast('success', 'Bot Enabled', `"${rule.name}" is now active!`);
-              }}
-              onDeleteRule={(id) => {
-                setAutomations((prev) => prev.filter((a) => a.id !== id));
-                addToast('info', 'Rule Removed', 'Bot deleted.');
-              }}
-            />
-          )}
+              {activeTab === 'support_tickets' && (
+                <SupportTicketsView
+                  onReplyOnWhatsApp={(phone, text) => {
+                    handleSendDirectMessage({ toPhone: phone, text });
+                  }}
+                />
+              )}
 
-          {activeTab === 'drip_sequences' && (
-            <DripSequencesView
-              sequences={dripSequences}
-              onToggleSequence={(id) => {
-                setDripSequences((prev) =>
-                  prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s))
-                );
-              }}
-              onAddSequence={(seq) => {
-                const newSeq: DripSequence = {
-                  ...seq,
-                  id: 'drip_' + Date.now(),
-                  enrolledCount: 1,
-                  completedCount: 0,
-                };
-                setDripSequences((prev) => [newSeq, ...prev]);
-                addToast('success', 'Sequence Created', `"${seq.name}" is now active.`);
-              }}
-              onTestStepSend={(step) => {
-                if (contacts[0]) {
-                  handleSendDirectMessage({
-                    toPhone: contacts[0].phone,
-                    text: step.message,
-                  });
-                } else {
-                  addToast('info', 'Step Simulated', `Step: "${step.title}" message tested!`);
-                }
-              }}
-            />
-          )}
+              {activeTab === 'automations' && (
+                <AutomationsView
+                  automations={automations}
+                  onToggleActive={(id) => {
+                    setAutomations((prev) =>
+                      prev.map((a) => (a.id === id ? { ...a, isActive: !a.isActive } : a))
+                    );
+                  }}
+                  onAddRule={(rule) => {
+                    const newRule: AutomationRule = {
+                      ...rule,
+                      id: 'auto_' + Date.now(),
+                      triggerCount: 0,
+                    };
+                    setAutomations((prev) => [newRule, ...prev]);
+                    addToast('success', 'Bot Enabled', `"${rule.name}" is now active!`);
+                  }}
+                  onDeleteRule={(id) => {
+                    setAutomations((prev) => prev.filter((a) => a.id !== id));
+                    addToast('info', 'Rule Removed', 'Bot deleted.');
+                  }}
+                />
+              )}
 
-          {activeTab === 'cart_recovery' && (
-            <CartRecoveryView
-              leads={cartLeads}
-              onSendRecovery={(lead, coupon) => {
-                handleSendDirectMessage({
-                  toPhone: lead.phone,
-                  text: `🛒 Hi *${lead.customerName}*! We noticed you left items in your cart. Use code *${coupon}* for 15% off: https://shop.sengarhub.com/cart/resume`,
-                });
-                setCartLeads((prev) =>
-                  prev.map((l) => (l.id === lead.id ? { ...l, recoveryStatus: 'recovered' } : l))
-                );
-              }}
-            />
-          )}
-
-          {activeTab === 'catalog_payments' && (
-            <CatalogPaymentsView
-              products={catalogProducts}
-              contacts={contacts}
-              onSendProductInvoice={(params) => {
-                handleSendDirectMessage({
-                  toPhone: params.recipientPhone,
-                  text: `🧾 *Order Invoice & Payment Link*\nItem: *${params.product.name}*\nAmount: *${params.product.currency}${params.product.price.toFixed(2)}*\nPayment Link: https://pay.sengarhub.com/order-8492`,
-                  mediaUrl: params.product.imageUrl,
-                  mediaType: 'image',
-                  caption: `Official order for ${params.customerName}. Complete payment securely above.`,
-                });
-              }}
-              onAddProduct={(prod) => {
-                const newP: CatalogProduct = {
-                  ...prod,
-                  id: 'prod_' + Date.now(),
-                };
-                setCatalogProducts((prev) => [newP, ...prev]);
-                addToast('success', 'Product Added', `"${prod.name}" added to catalog.`);
-              }}
-            />
-          )}
-
-          {activeTab === 'groups_manager' && (
-            <GroupsManagerView
-              groups={groups}
-              onSendGroupAnnouncement={(group, msg) => {
-                addToast('success', 'Announcement Sent', `Delivered to group "${group.name}"!`);
-                setLogs((prev) => [
-                  {
-                    id: 'log_' + Date.now(),
-                    recipientPhone: group.name,
-                    type: 'broadcast',
-                    content: msg,
-                    status: 'delivered',
-                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                  },
-                  ...prev,
-                ]);
-              }}
-              onAddGroup={(grp) => {
-                const newG: WhatsAppGroup = {
-                  ...grp,
-                  id: 'grp_' + Date.now(),
-                  lastActive: 'Just now',
-                };
-                setGroups((prev) => [newG, ...prev]);
-                addToast('success', 'Group Tracked', `Added "${grp.name}" to manager.`);
-              }}
-            />
-          )}
-
-          {activeTab === 'polls_surveys' && (
-            <PollsSurveysView
-              polls={polls}
-              contacts={contacts}
-              onSendPoll={(poll, phone) => {
-                const pollText = `📊 *${poll.question}*\n\n` + poll.options.map((o, idx) => `${idx + 1}. ${o.text}`).join('\n') + '\n\nReply with your option number to vote!';
-                handleSendDirectMessage({
-                  toPhone: phone,
-                  text: pollText,
-                });
-              }}
-              onAddPoll={(poll) => {
-                const newPoll: WhatsAppPoll = {
-                  ...poll,
-                  id: 'poll_' + Date.now(),
-                  totalVotes: 0,
-                  createdAt: 'Just now',
-                  status: 'active',
-                };
-                setPolls((prev) => [newPoll, ...prev]);
-                addToast('success', 'Poll Created', `"${poll.question}" is live!`);
-              }}
-              onSimulateVote={(pollId, optionId) => {
-                setPolls((prev) =>
-                  prev.map((p) => {
-                    if (p.id === pollId) {
-                      const updatedOptions = p.options.map((o) =>
-                        o.id === optionId ? { ...o, votes: o.votes + 1 } : o
-                      );
-                      return {
-                        ...p,
-                        totalVotes: p.totalVotes + 1,
-                        options: updatedOptions,
-                      };
+              {activeTab === 'drip_sequences' && (
+                <DripSequencesView
+                  sequences={dripSequences}
+                  onToggleSequence={(id) => {
+                    setDripSequences((prev) =>
+                      prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s))
+                    );
+                  }}
+                  onAddSequence={(seq) => {
+                    const newSeq: DripSequence = {
+                      ...seq,
+                      id: 'drip_' + Date.now(),
+                      enrolledCount: 1,
+                      completedCount: 0,
+                    };
+                    setDripSequences((prev) => [newSeq, ...prev]);
+                    addToast('success', 'Sequence Created', `"${seq.name}" is now active.`);
+                  }}
+                  onTestStepSend={(step) => {
+                    if (contacts[0]) {
+                      handleSendDirectMessage({
+                        toPhone: contacts[0].phone,
+                        text: step.message,
+                      });
+                    } else {
+                      addToast('info', 'Step Simulated', `Step: "${step.title}" message tested!`);
                     }
-                    return p;
-                  })
-                );
-                addToast('info', 'Vote Recorded', 'Test vote added to poll results.');
-              }}
-            />
-          )}
+                  }}
+                />
+              )}
 
-          {activeTab === 'templates' && (
-            <TemplatesView
-              onUseTemplate={(tpl: MessageTemplate) => {
-                setActiveTab('sender');
-                addToast('info', 'Template Loaded', `"${tpl.title}" ready in sender.`);
-              }}
-            />
-          )}
+              {activeTab === 'cart_recovery' && (
+                <CartRecoveryView
+                  leads={cartLeads}
+                  onSendRecovery={(lead, coupon) => {
+                    handleSendDirectMessage({
+                      toPhone: lead.phone,
+                      text: `🛒 Hi *${lead.customerName}*! We noticed you left items in your cart. Use code *${coupon}* for 15% off: https://shop.sengarhub.com/cart/resume`,
+                    });
+                    setCartLeads((prev) =>
+                      prev.map((l) => (l.id === lead.id ? { ...l, recoveryStatus: 'recovered' } : l))
+                    );
+                  }}
+                />
+              )}
 
-          {activeTab === 'contacts' && (
-            <ContactsView
-              contacts={contacts}
-              onAddContact={(c) => {
-                const newC: ContactItem = {
-                  ...c,
-                  id: 'c_' + Date.now(),
-                };
-                setContacts((prev) => [newC, ...prev]);
-                addToast('success', 'Contact Added', `${c.name} saved to audience.`);
-              }}
-              onDeleteContact={(id) => {
-                setContacts((prev) => prev.filter((c) => c.id !== id));
-                addToast('info', 'Contact Removed', 'Contact deleted.');
-              }}
-              onMessageContact={(c) => {
-                setActiveTab('sender');
-              }}
-            />
-          )}
+              {activeTab === 'catalog_payments' && (
+                <CatalogPaymentsView
+                  products={catalogProducts}
+                  contacts={contacts}
+                  onSendProductInvoice={(params) => {
+                    handleSendDirectMessage({
+                      toPhone: params.recipientPhone,
+                      text: `🧾 *Order Invoice & Payment Link*\nItem: *${params.product.name}*\nAmount: *${params.product.currency}${params.product.price.toFixed(2)}*\nPayment Link: https://pay.sengarhub.com/order-8492`,
+                      mediaUrl: params.product.imageUrl,
+                      mediaType: 'image',
+                      caption: `Official order for ${params.customerName}. Complete payment securely above.`,
+                    });
+                  }}
+                  onAddProduct={(prod) => {
+                    const newP: CatalogProduct = {
+                      ...prod,
+                      id: 'prod_' + Date.now(),
+                    };
+                    setCatalogProducts((prev) => [newP, ...prev]);
+                    addToast('success', 'Product Added', `"${prod.name}" added to catalog.`);
+                  }}
+                />
+              )}
 
-          {activeTab === 'analytics_reports' && <AnalyticsReportsView />}
+              {activeTab === 'groups_manager' && (
+                <GroupsManagerView
+                  groups={groups}
+                  onSendGroupAnnouncement={(group, msg) => {
+                    addToast('success', 'Announcement Sent', `Delivered to group "${group.name}"!`);
+                    setLogs((prev) => [
+                      {
+                        id: 'log_' + Date.now(),
+                        recipientPhone: group.name,
+                        type: 'broadcast',
+                        content: msg,
+                        status: 'delivered',
+                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                      },
+                      ...prev,
+                    ]);
+                  }}
+                  onAddGroup={(grp) => {
+                    const newG: WhatsAppGroup = {
+                      ...grp,
+                      id: 'grp_' + Date.now(),
+                      lastActive: 'Just now',
+                    };
+                    setGroups((prev) => [newG, ...prev]);
+                    addToast('success', 'Group Tracked', `Added "${grp.name}" to manager.`);
+                  }}
+                />
+              )}
 
-          {activeTab === 'settings' && (
-            <SettingsView
-              config={config}
-              onSaveConfig={handleSaveConfig}
-              connectionState={connectionState}
-              isChecking={isCheckingConnection}
-              onTestConnection={() => checkConnection()}
-              onClearCredentials={handleClearCredentials}
-            />
-          )}
-        </main>
-      </div>
+              {activeTab === 'polls_surveys' && (
+                <PollsSurveysView
+                  polls={polls}
+                  contacts={contacts}
+                  onSendPoll={(poll, phone) => {
+                    const pollText = `📊 *${poll.question}*\n\n` + poll.options.map((o, idx) => `${idx + 1}. ${o.text}`).join('\n') + '\n\nReply with your option number to vote!';
+                    handleSendDirectMessage({
+                      toPhone: phone,
+                      text: pollText,
+                    });
+                  }}
+                  onAddPoll={(poll) => {
+                    const newPoll: WhatsAppPoll = {
+                      ...poll,
+                      id: 'poll_' + Date.now(),
+                      totalVotes: 0,
+                      createdAt: 'Just now',
+                      status: 'active',
+                    };
+                    setPolls((prev) => [newPoll, ...prev]);
+                    addToast('success', 'Poll Created', `"${poll.question}" is live!`);
+                  }}
+                  onSimulateVote={(pollId, optionId) => {
+                    setPolls((prev) =>
+                      prev.map((p) => {
+                        if (p.id === pollId) {
+                          const updatedOptions = p.options.map((o) =>
+                            o.id === optionId ? { ...o, votes: o.votes + 1 } : o
+                          );
+                          return {
+                            ...p,
+                            totalVotes: p.totalVotes + 1,
+                            options: updatedOptions,
+                          };
+                        }
+                        return p;
+                      })
+                    );
+                    addToast('info', 'Vote Recorded', 'Test vote added to poll results.');
+                  }}
+                />
+              )}
+
+              {activeTab === 'templates' && (
+                <TemplatesView
+                  onUseTemplate={(tpl: MessageTemplate) => {
+                    setActiveTab('sender');
+                    addToast('info', 'Template Loaded', `"${tpl.title}" ready in sender.`);
+                  }}
+                />
+              )}
+
+              {activeTab === 'contacts' && (
+                <ContactsView
+                  contacts={contacts}
+                  onAddContact={(c) => {
+                    const newC: ContactItem = {
+                      ...c,
+                      id: 'c_' + Date.now(),
+                    };
+                    setContacts((prev) => [newC, ...prev]);
+                    addToast('success', 'Contact Added', `${c.name} saved to audience.`);
+                  }}
+                  onDeleteContact={(id) => {
+                    setContacts((prev) => prev.filter((c) => c.id !== id));
+                    addToast('info', 'Contact Removed', 'Contact deleted.');
+                  }}
+                  onMessageContact={(c) => {
+                    setActiveTab('sender');
+                  }}
+                />
+              )}
+
+              {activeTab === 'analytics_reports' && <AnalyticsReportsView />}
+
+              {activeTab === 'settings' && (
+                <SettingsView
+                  config={config}
+                  onSaveConfig={handleSaveConfig}
+                  connectionState={connectionState}
+                  isChecking={isCheckingConnection}
+                  onTestConnection={() => checkConnection()}
+                  onClearCredentials={handleClearCredentials}
+                  currentUser={currentUser}
+                />
+              )}
+            </main>
+          </div>
+        </div>
+      )}
+
+      {/* Neon PostgreSQL Auth Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        initialMode={authModalMode}
+        onAuthSuccess={handleAuthSuccess}
+      />
 
       {/* Floating Toast Notification System */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto p-4 rounded-2xl border shadow-lg flex items-start gap-3 bg-white transition-all transform duration-200 animate-slide-up ${
-              toast.type === 'success'
+            className={`pointer-events-auto p-4 rounded-2xl border shadow-lg flex items-start gap-3 bg-white transition-all transform duration-200 animate-slide-up ${toast.type === 'success'
                 ? 'border-emerald-200 text-slate-800'
                 : toast.type === 'error'
-                ? 'border-rose-200 text-slate-800'
-                : 'border-blue-200 text-slate-800'
-            }`}
+                  ? 'border-rose-200 text-slate-800'
+                  : 'border-blue-200 text-slate-800'
+              }`}
           >
             {toast.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
@@ -792,6 +898,6 @@ export default function App() {
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }
